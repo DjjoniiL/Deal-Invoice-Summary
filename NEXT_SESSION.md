@@ -93,7 +93,7 @@ POST /v1/infra/servers/c576798a-ec5f-4491-b6a2-b28e74fc445f/deploy?stream=false
 - `description: CRM deal tab that summarizes linked invoice payments and exports a management report.`
 - `changelog` при обновлении
 
-Последняя развернутая версия до документационного коммита: `v13`.
+Последняя развернутая версия: `v16`.
 
 ## Git
 

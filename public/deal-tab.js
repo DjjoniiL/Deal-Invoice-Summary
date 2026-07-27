@@ -23,6 +23,14 @@ const paidSegment = document.querySelector("#paidSegment");
 const unpaidSegment = document.querySelector("#unpaidSegment");
 const downloadReport = document.querySelector("#downloadReport");
 
+if (window.BX24?.init) {
+  try {
+    window.BX24.init(() => {});
+  } catch {
+    // The SDK can already be initialized by Bitrix24 placement bootstrap.
+  }
+}
+
 function parseJson(value) {
   try {
     return JSON.parse(value);
@@ -113,17 +121,47 @@ function invoicePath(invoiceId) {
   return `/crm/type/31/details/${encodeURIComponent(invoiceId)}/`;
 }
 
+function portalOrigin() {
+  const params = new URLSearchParams(window.location.search);
+  for (const key of ["DOMAIN", "domain"]) {
+    const value = params.get(key);
+    if (value) return `https://${value.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}`;
+  }
+
+  if (window.location.ancestorOrigins?.length) return window.location.ancestorOrigins[0];
+
+  try {
+    return document.referrer ? new URL(document.referrer).origin : "";
+  } catch {
+    return "";
+  }
+}
+
+function invoiceUrl(invoiceId) {
+  const path = invoicePath(invoiceId);
+  const origin = portalOrigin();
+  return origin ? `${origin}${path}` : path;
+}
+
 function openInvoice(invoiceId) {
   const path = invoicePath(invoiceId);
   if (window.BX24?.init && window.BX24?.openPath) {
-    window.BX24.init(() => window.BX24.openPath(path));
-    return;
+    try {
+      window.BX24.openPath(path);
+      return true;
+    } catch {
+      return false;
+    }
   }
   if (window.BX24?.openPath) {
-    window.BX24.openPath(path);
-    return;
+    try {
+      window.BX24.openPath(path);
+      return true;
+    } catch {
+      return false;
+    }
   }
-  window.open(path, "_blank", "noopener");
+  return false;
 }
 
 function formatDate(value) {
@@ -156,12 +194,16 @@ function render(data) {
 
     const main = document.createElement("div");
     main.className = "invoice-main";
-    const titleNode = document.createElement("button");
+    const titleNode = document.createElement("a");
     const stageNode = document.createElement("span");
-    titleNode.type = "button";
     titleNode.className = "invoice-link";
+    titleNode.href = invoiceUrl(invoice.id);
+    titleNode.target = "_blank";
+    titleNode.rel = "noopener";
     titleNode.textContent = invoice.accountNumber ? `Счёт № ${invoice.accountNumber}` : invoice.title || `Счёт #${invoice.id}`;
-    titleNode.addEventListener("click", () => openInvoice(invoice.id));
+    titleNode.addEventListener("click", (event) => {
+      if (openInvoice(invoice.id)) event.preventDefault();
+    });
     stageNode.textContent = stageLabel(invoice.stageId);
     main.append(titleNode, stageNode);
 

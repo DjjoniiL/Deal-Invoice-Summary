@@ -17,7 +17,10 @@ test("deal tab exposes the MVP report layout", () => {
 
 test("deal tab keeps invoices clickable inside Bitrix24", () => {
   assert.match(html, /api\.bitrix24\.com\/api\/v1/);
+  assert.match(js, /document\.createElement\("a"\)/);
+  assert.match(js, /titleNode\.href = invoiceUrl\(invoice\.id\)/);
   assert.match(js, /function openInvoice/);
+  assert.match(js, /function portalOrigin/);
   assert.match(js, /BX24\.openPath/);
   assert.match(js, /\/crm\/type\/31\/details\//);
 });
