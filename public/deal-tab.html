@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="/_gw/icon">
+    <link rel="stylesheet" href="/styles.css">
+    <title>Расчёт оплаты счетов</title>
+  </head>
+  <body class="tab-body">
+    <main class="tab-shell">
+      <section class="payment-hero">
+        <div class="hero-copy">
+          <span class="eyebrow">Финансы сделки</span>
+          <h1>Расчёт оплаты счетов</h1>
+          <p id="dealTitle">Определяю сделку...</p>
+        </div>
+        <button id="recalculate" class="refresh-button" title="Пересчитать и записать в поля сделки">↻</button>
+      </section>
+
+      <section class="payment-layout" aria-live="polite">
+        <section class="chart-panel">
+          <div class="chart-top">
+            <div class="donut" id="coverageDonut">
+              <div class="donut-core">
+                <strong id="coverageText">0%</strong>
+                <span>оплачено</span>
+              </div>
+            </div>
+            <div class="chart-copy">
+              <h2 id="paymentState">Расчёт готовится</h2>
+              <p id="invoiceMeta">Счетов: 0</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="summary-column">
+          <div class="metric-grid">
+            <article class="metric issued">
+              <span>Выставлено</span>
+              <strong id="issued">0 ₽</strong>
+            </article>
+            <article class="metric paid">
+              <span>Оплачено</span>
+              <strong id="paid">0 ₽</strong>
+            </article>
+            <article class="metric unpaid">
+              <span>Не оплачено</span>
+              <strong id="unpaid">0 ₽</strong>
+            </article>
+            <article class="metric remaining">
+              <span>Остаток по сделке</span>
+              <strong id="remaining">0 ₽</strong>
+            </article>
+          </div>
+          <div class="composition-compact">
+            <div class="compact-title">
+              <span>Структура счетов</span>
+              <span id="status" class="status-pill">Готово</span>
+            </div>
+            <div class="stacked-bar" title="Оплачено и не оплачено">
+              <div id="paidSegment" class="bar-segment paid-segment"></div>
+              <div id="unpaidSegment" class="bar-segment unpaid-segment"></div>
+            </div>
+            <div class="legend">
+              <span><i class="paid-dot"></i>Оплачено</span>
+              <span><i class="unpaid-dot"></i>Не оплачено</span>
+              <span><i class="skipped-dot"></i>Пропущено</span>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section class="tab-panel">
+        <div class="panel-title">
+          <h2>Счета сделки</h2>
+          <button id="downloadReport" class="download-button" type="button">Скачать отчёт</button>
+        </div>
+        <div class="invoice-head">
+          <span>Счёт</span>
+          <span>Дата выставления</span>
+          <span>Ответственный</span>
+          <span>Сумма</span>
+        </div>
+        <div id="invoiceList" class="invoice-list"></div>
+      </section>
+    </main>
+    <script src="//api.bitrix24.com/api/v1/"></script>
+    <script src="/deal-tab.js"></script>
+  </body>
+</html>

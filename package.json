@@ -1,0 +1,14 @@
+{
+  "name": "deal-invoice-summary",
+  "version": "1.0.0",
+  "description": "Bitrix24 VibeCode app for calculating invoice totals in deal fields.",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test src/*.test.js public/*.test.js",
+    "lint": "node --check src/server.js && node --check src/vibeClient.js && node --check src/summary.js && node --check src/server.test.js && node --check src/vibeClient.test.js && node --check src/summary.test.js && node --check public/app.js && node --check public/deal-tab.js && node --check public/app.test.js && node --check public/deal-tab.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

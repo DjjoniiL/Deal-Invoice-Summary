@@ -1,0 +1,7 @@
+{
+  "includeNegativeStages": false,
+  "issuedField": "ufCrmInvSumIssued",
+  "paidField": "ufCrmInvSumPaid",
+  "unpaidField": "ufCrmInvSumUnpaid",
+  "remainingField": "ufCrmInvSumRemaining"
+}
