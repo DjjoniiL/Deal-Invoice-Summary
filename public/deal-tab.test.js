@@ -22,6 +22,7 @@ test("deal tab keeps invoices clickable inside Bitrix24", () => {
   assert.match(js, /function openInvoice/);
   assert.match(js, /function portalOrigin/);
   assert.match(js, /BX24\.openPath/);
+  assert.doesNotMatch(js, /preventDefault\(\)/);
   assert.match(js, /\/crm\/type\/31\/details\//);
 });
 

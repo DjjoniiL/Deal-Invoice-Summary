@@ -201,8 +201,8 @@ function render(data) {
     titleNode.target = "_blank";
     titleNode.rel = "noopener";
     titleNode.textContent = invoice.accountNumber ? `Счёт № ${invoice.accountNumber}` : invoice.title || `Счёт #${invoice.id}`;
-    titleNode.addEventListener("click", (event) => {
-      if (openInvoice(invoice.id)) event.preventDefault();
+    titleNode.addEventListener("click", () => {
+      openInvoice(invoice.id);
     });
     stageNode.textContent = stageLabel(invoice.stageId);
     main.append(titleNode, stageNode);
