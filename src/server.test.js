@@ -9,6 +9,7 @@ import {
   invoiceCalculationGroup,
   invoiceStageName,
   normalizeDealId,
+  parseBitrixForm,
   reportDate,
   toCsv,
 } from "./server.js";
@@ -41,6 +42,18 @@ test("formats invoice stage and calculation group for reports", () => {
   assert.equal(invoiceCalculationGroup(invoice, statuses, false), "Оплаченный");
   assert.equal(invoiceCalculationGroup({ stageId: "DT31_6:D" }, [], false), "Пропущен");
   assert.equal(invoiceCalculationGroup({ stageId: "DT31_6:D" }, [], true), "Неоплаченный");
+});
+
+test("parses nested Bitrix24 event form payloads", () => {
+  const payload = parseBitrixForm(
+    "event=ONCRMDEALUPDATE&data[FIELDS][ID]=2&auth[application_token]=token&auth[domain]=example.bitrix24.ru",
+  );
+
+  assert.deepEqual(payload, {
+    event: "ONCRMDEALUPDATE",
+    data: { FIELDS: { ID: "2" } },
+    auth: { application_token: "token", domain: "example.bitrix24.ru" },
+  });
 });
 
 test("escapes CSV cells and builds Excel-friendly deal report", () => {
@@ -80,7 +93,7 @@ test("escapes CSV cells and builds Excel-friendly deal report", () => {
   assert.match(csv, /2;2;Счёт № 2;Оплачен;27\.07\.2026;Ковальчук Иван;7400;Оплаченный/);
 });
 
-test("serves health JSON and deal tab HTML", async () => {
+test("serves health JSON, left menu page, and deal tab HTML", async () => {
   const server = createApp();
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -90,6 +103,10 @@ test("serves health JSON and deal tab HTML", async () => {
     const health = await fetch(`http://127.0.0.1:${port}/api/health`);
     assert.equal(health.headers.get("content-type"), "application/json; charset=utf-8");
     assert.deepEqual(await health.json(), { ok: true });
+
+    const menu = await fetch(`http://127.0.0.1:${port}/`);
+    assert.equal(menu.status, 200);
+    assert.match(await menu.text(), /Сопоставление полей сделки/);
 
     const tab = await fetch(`http://127.0.0.1:${port}/deal-tab`);
     assert.equal(tab.status, 200);

@@ -10,6 +10,7 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const publicDir = join(root, "public");
 const dataDir = process.env.DATA_DIR || join(root, "data");
 const settingsPath = join(dataDir, "settings.json");
+const invoiceEntityTypeId = 31;
 
 const client = new VibeClient({
   baseUrl: process.env.VIBE_API_BASE_URL,
@@ -58,6 +59,43 @@ async function readJson(req) {
   for await (const chunk of req) chunks.push(chunk);
   const text = Buffer.concat(chunks).toString("utf8");
   return text ? JSON.parse(text) : {};
+}
+
+async function readText(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+function assignFormValue(target, key, value) {
+  const parts = [...key.matchAll(/[^\][[]+/g)].map((match) => match[0]);
+  if (!parts.length) return;
+
+  let node = target;
+  for (const part of parts.slice(0, -1)) {
+    node[part] = node[part] && typeof node[part] === "object" ? node[part] : {};
+    node = node[part];
+  }
+  node[parts.at(-1)] = value;
+}
+
+export function parseBitrixForm(text) {
+  const payload = {};
+  for (const [key, value] of new URLSearchParams(text)) {
+    assignFormValue(payload, key, value);
+  }
+  return payload;
+}
+
+function changedDealPatch(deal, patch) {
+  return Object.fromEntries(
+    Object.entries(patch).filter(([field, value]) => moneyEquivalent(deal[field]) !== moneyEquivalent(value)),
+  );
+}
+
+function moneyEquivalent(value) {
+  const number = Number(value ?? 0);
+  return Number.isFinite(number) ? Math.round(number * 100) / 100 : value;
 }
 
 export function fieldOptions(fields) {
@@ -184,8 +222,9 @@ async function calculateDeal(dealId, settings = null, statuses = null, write = f
   });
 
   const patch = buildDealPatch(summary, activeSettings);
-  if (write && Object.keys(patch).length) {
-    await client.patch(`/v1/deals/${encodeURIComponent(normalizedDealId)}`, patch);
+  const changedPatch = changedDealPatch(deal, patch);
+  if (write && Object.keys(changedPatch).length) {
+    await client.patch(`/v1/deals/${encodeURIComponent(normalizedDealId)}`, changedPatch);
   }
 
   return {
@@ -204,7 +243,7 @@ async function calculateDeal(dealId, settings = null, statuses = null, write = f
       assignedById: invoice.assignedById || null,
       assignedName: users.get(Number(invoice.assignedById)) || null,
     })),
-    updatedFields: write ? patch : {},
+    updatedFields: write ? changedPatch : {},
   };
 }
 
@@ -232,6 +271,46 @@ async function recalculateRecent(days = 30) {
   }
 
   return { since, dealCount: dealIds.length, results };
+}
+
+function isInvoiceEvent(event, fields) {
+  const name = String(event || "").toUpperCase();
+  const entityType = Number(fields.ENTITY_TYPE_ID || fields.entityTypeId || fields.entityTypeID || fields.entity_type_id);
+  return entityType === invoiceEntityTypeId || name.includes("INVOICE");
+}
+
+function eventDealId(event, fields) {
+  const name = String(event || "").toUpperCase();
+  if (name.includes("DEAL")) return normalizeDealId(fields.ID || fields.id);
+  return normalizeDealId(fields.PARENT_ID_2 || fields.parentId2 || fields.parent_id_2 || fields.DEAL_ID || fields.dealId);
+}
+
+async function eventInvoiceDealId(fields) {
+  const direct = eventDealId("", fields);
+  if (direct) return direct;
+
+  const invoiceId = normalizeDealId(fields.ID || fields.id);
+  if (!invoiceId) return 0;
+
+  const response = await client.get(`/v1/invoices/${encodeURIComponent(invoiceId)}`);
+  return normalizeDealId(response.data?.parentId2 || response.data?.PARENT_ID_2);
+}
+
+export async function handleBitrixEvent(payload) {
+  const event = String(payload.event || "");
+  const fields = payload.data?.FIELDS || payload.data?.fields || {};
+  let dealId = eventDealId(event, fields);
+
+  if (!dealId && isInvoiceEvent(event, fields)) {
+    dealId = await eventInvoiceDealId(fields);
+  }
+
+  if (!dealId) {
+    return { ok: true, skipped: true, reason: "No linked deal id", event };
+  }
+
+  const result = await recalculateDeal(dealId);
+  return { ok: true, event, dealId, updatedFields: result.updatedFields };
 }
 
 async function ensureFields() {
@@ -311,6 +390,16 @@ async function routeApi(req, res, pathname) {
   if (pathname === "/api/recalculate/recent" && req.method === "POST") {
     const { days = 30 } = await readJson(req);
     return sendJson(res, 200, await recalculateRecent(Number(days) || 30));
+  }
+
+  if (pathname === "/api/events/bitrix24" && req.method === "POST") {
+    const payload = parseBitrixForm(await readText(req));
+    const expectedToken = process.env.BITRIX_APPLICATION_TOKEN;
+    const actualToken = payload.auth?.application_token;
+    if (expectedToken && actualToken !== expectedToken) {
+      return sendJson(res, 403, { ok: false, error: "Invalid application token" });
+    }
+    return sendJson(res, 200, await handleBitrixEvent(payload));
   }
 
   sendJson(res, 404, { error: "Not found" });

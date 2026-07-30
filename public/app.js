@@ -1,9 +1,15 @@
 const form = document.querySelector("#settings");
 const result = document.querySelector("#result");
 const portal = document.querySelector("#portal");
+const mappingStatus = document.querySelector("#mappingStatus");
 
 function write(value) {
   result.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+}
+
+function setMappingStatus(text, tone = "neutral") {
+  mappingStatus.textContent = text;
+  mappingStatus.dataset.tone = tone;
 }
 
 async function api(path, options = {}) {
@@ -31,14 +37,23 @@ function fillSelect(select, fields, value) {
   select.value = value || "";
 }
 
+function mappingIsComplete(settings) {
+  return Boolean(settings.issuedField && settings.paidField && settings.unpaidField && settings.remainingField);
+}
+
 async function load() {
   write("Загружаю настройки...");
+  setMappingStatus("Проверяю настройки...");
   const data = await api("/api/bootstrap");
   portal.textContent = `${data.portal} · ${data.accessMode}`;
   for (const select of form.querySelectorAll("select")) {
     fillSelect(select, data.fields, data.settings[select.name]);
   }
   form.includeNegativeStages.checked = Boolean(data.settings.includeNegativeStages);
+  setMappingStatus(
+    mappingIsComplete(data.settings) ? "Сопоставление готово" : "Выберите поля или создайте автоматически",
+    mappingIsComplete(data.settings) ? "success" : "warning",
+  );
   write("Настройки загружены.");
 }
 
@@ -46,10 +61,16 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const settings = Object.fromEntries(new FormData(form));
   settings.includeNegativeStages = form.includeNegativeStages.checked;
-  write(await api("/api/settings", { method: "POST", body: JSON.stringify(settings) }));
+  const response = await api("/api/settings", { method: "POST", body: JSON.stringify(settings) });
+  setMappingStatus(
+    mappingIsComplete(response.settings) ? "Сопоставление сохранено" : "Часть полей не выбрана",
+    mappingIsComplete(response.settings) ? "success" : "warning",
+  );
+  write(response);
 });
 
 document.querySelector("#ensureFields").addEventListener("click", async () => {
+  setMappingStatus("Создаю стандартные поля...");
   write("Создаю недостающие поля...");
   write(await api("/api/fields/ensure", { method: "POST", body: "{}" }));
   await load();
@@ -68,4 +89,7 @@ document.querySelector("#recent").addEventListener("click", async () => {
 
 document.querySelector("#refresh").addEventListener("click", load);
 
-load().catch((error) => write(error.message));
+load().catch((error) => {
+  setMappingStatus("Ошибка загрузки", "warning");
+  write(error.message);
+});

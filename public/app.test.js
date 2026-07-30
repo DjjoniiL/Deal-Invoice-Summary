@@ -5,7 +5,7 @@ import { test } from "node:test";
 const html = await readFile(new URL("./index.html", import.meta.url), "utf8");
 const js = await readFile(new URL("./app.js", import.meta.url), "utf8");
 
-test("settings page contains field mapping and recalculation controls", () => {
+test("left menu page contains setup, CTA, and recalculation controls", () => {
   assert.match(html, /name="issuedField"/);
   assert.match(html, /name="paidField"/);
   assert.match(html, /name="unpaidField"/);
@@ -13,6 +13,9 @@ test("settings page contains field mapping and recalculation controls", () => {
   assert.match(html, /id="ensureFields"/);
   assert.match(html, /id="dealForm"/);
   assert.match(html, /id="recent"/);
+  assert.match(html, /Сопоставление полей сделки/);
+  assert.match(html, /Создать автоматически/);
+  assert.match(html, /Нужна доработка этого приложения/);
   assert.match(html, /Пересчитать сделку/);
 });
 

@@ -5,41 +5,78 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" href="/_gw/icon">
     <link rel="stylesheet" href="/styles.css">
-    <title>Счета по сделкам</title>
+    <title>Расчёт оплаты счетов</title>
   </head>
   <body>
-    <main class="shell">
-      <section class="topbar">
+    <main class="shell menu-shell">
+      <section class="menu-hero">
         <div>
-          <h1>Счета по сделкам</h1>
+          <span class="menu-eyebrow">Deal Invoice Summary</span>
+          <h1>Расчёт оплаты счетов</h1>
           <p id="portal">Подключение к порталу...</p>
         </div>
         <button id="refresh" class="icon-button" title="Обновить">↻</button>
       </section>
 
-      <section class="grid">
-        <form id="settings" class="panel">
+      <section class="notice-panel">
+        <div>
+          <strong>Нужна доработка этого приложения или разработка нового?</strong>
+          <p>Опишите задачу: добавим отчёты, автоматизацию, виджеты открытых линий и интеграции под ваши процессы Bitrix24.</p>
+        </div>
+        <span class="notice-action">Обратиться</span>
+      </section>
+
+      <section class="setup-grid">
+        <form id="settings" class="panel setup-panel">
           <div class="panel-title">
-            <h2>Поля сделки</h2>
-            <button type="button" id="ensureFields">Создать поля</button>
+            <div>
+              <h2>Сопоставление полей сделки</h2>
+              <p>Выберите существующие поля или создайте стандартный набор автоматически.</p>
+            </div>
+            <button type="button" id="ensureFields">Создать автоматически</button>
           </div>
-          <label>Сумма выставленных счетов<select name="issuedField"></select></label>
-          <label>Сумма оплаченных счетов<select name="paidField"></select></label>
-          <label>Сумма неоплаченных счетов<select name="unpaidField"></select></label>
-          <label>Остаток оплаты<select name="remainingField"></select></label>
-          <label class="check"><input type="checkbox" name="includeNegativeStages"> Учитывать отрицательные стадии</label>
-          <button type="submit">Сохранить настройки</button>
+
+          <div class="field-grid">
+            <label>Выставлено по счетам<select name="issuedField"></select></label>
+            <label>Оплачено по счетам<select name="paidField"></select></label>
+            <label>Не оплачено по счетам<select name="unpaidField"></select></label>
+            <label>Остаток оплаты<select name="remainingField"></select></label>
+          </div>
+
+          <label class="check">
+            <input type="checkbox" name="includeNegativeStages">
+            Учитывать отрицательные стадии счетов как неоплаченные
+          </label>
+
+          <div class="form-actions">
+            <button type="submit">Сохранить сопоставление</button>
+            <span id="mappingStatus">Проверяю настройки...</span>
+          </div>
         </form>
 
-        <section class="panel">
-          <h2>Пересчёт</h2>
-          <form id="dealForm" class="row">
-            <input name="dealId" inputmode="numeric" placeholder="ID сделки">
-            <button>Пересчитать сделку</button>
-          </form>
+        <section class="panel automation-panel">
+          <h2>Автопересчёт</h2>
+          <div class="automation-list">
+            <span>При изменении сделки</span>
+            <strong>Поля пересчитываются событием CRM</strong>
+            <span>При изменении счёта</span>
+            <strong>Связанная сделка пересчитывается по parentId2</strong>
+            <span>Маршрут обработчика</span>
+            <strong>/api/events/bitrix24</strong>
+          </div>
           <button id="recent">Пересчитать счета за 30 дней</button>
-          <pre id="result">Готово к работе.</pre>
         </section>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">
+          <h2>Ручная проверка</h2>
+        </div>
+        <form id="dealForm" class="row">
+          <input name="dealId" inputmode="numeric" placeholder="ID сделки">
+          <button>Пересчитать сделку</button>
+        </form>
+        <pre id="result">Готово к работе.</pre>
       </section>
     </main>
     <script src="/app.js"></script>
