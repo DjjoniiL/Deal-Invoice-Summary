@@ -2,9 +2,22 @@ const form = document.querySelector("#settings");
 const result = document.querySelector("#result");
 const portal = document.querySelector("#portal");
 const mappingStatus = document.querySelector("#mappingStatus");
+const dealForm = document.querySelector("#dealForm");
+const dealIdInput = dealForm.elements.dealId;
+const dealUrlInput = dealForm.elements.dealUrl;
+const logToggle = document.querySelector("#logToggle");
 
-function write(value) {
+const recalculationStatusMinMs = 1500;
+let portalHost = "";
+
+function setLogVisible(visible) {
+  result.hidden = !visible;
+  logToggle.setAttribute("aria-expanded", String(visible));
+}
+
+function write(value, { reveal = false } = {}) {
   result.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  if (reveal) setLogVisible(true);
 }
 
 function setMappingStatus(text, tone = "neutral") {
@@ -12,7 +25,23 @@ function setMappingStatus(text, tone = "neutral") {
   mappingStatus.dataset.tone = tone;
 }
 
-async function api(path, options = {}) {
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withMinimumDelay(promise, minMs) {
+  const startedAt = Date.now();
+  const outcome = await promise.then(
+    (value) => ({ value }),
+    (error) => ({ error }),
+  );
+  const waitMs = minMs - (Date.now() - startedAt);
+  if (waitMs > 0) await delay(waitMs);
+  if (outcome.error) throw outcome.error;
+  return outcome.value;
+}
+
+async function api(path, options = {}, attempt = 1) {
   const response = await fetch(path, {
     ...options,
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
@@ -23,7 +52,13 @@ async function api(path, options = {}) {
     payload = text ? JSON.parse(text) : {};
   } catch {
     const contentType = response.headers.get("Content-Type") || "unknown content";
-    throw new Error(`Сервер вернул не JSON (${response.status}, ${contentType})`);
+    if ([502, 503, 504].includes(response.status) && attempt < 2) {
+      await delay(1200);
+      return api(path, options, attempt + 1);
+    }
+    throw new Error(
+      `VibeCode вернул HTML вместо JSON (${response.status}, ${contentType}). Повторите запрос через несколько секунд.`,
+    );
   }
   if (!response.ok) throw new Error(payload.error || "Ошибка запроса");
   return payload;
@@ -45,6 +80,7 @@ async function load() {
   write("Загружаю настройки...");
   setMappingStatus("Проверяю настройки...");
   const data = await api("/api/bootstrap");
+  portalHost = data.portal || "";
   portal.textContent = `${data.portal} · ${data.accessMode}`;
   for (const select of form.querySelectorAll("select")) {
     fillSelect(select, data.fields, data.settings[select.name]);
@@ -57,34 +93,93 @@ async function load() {
   write("Настройки загружены.");
 }
 
+function dealIdFromText(value) {
+  const text = String(value || "").trim();
+  const dealMatch = text.match(/\/crm\/deal\/details\/(\d+)\b/i);
+  const idMatch = dealMatch || text.match(/\bdeal[_/-]?(\d+)\b/i) || text.match(/\b(\d+)\b/);
+  return idMatch ? idMatch[1] : "";
+}
+
+function dealUrlFromId(dealId) {
+  const id = dealIdFromText(dealId);
+  return id && portalHost ? `https://${portalHost}/crm/deal/details/${id}/` : "";
+}
+
+dealUrlInput.addEventListener("input", () => {
+  const dealId = dealIdFromText(dealUrlInput.value);
+  if (dealId) dealIdInput.value = dealId;
+});
+
+dealIdInput.addEventListener("input", () => {
+  const url = dealUrlFromId(dealIdInput.value);
+  if (url) dealUrlInput.value = url;
+});
+
+logToggle.addEventListener("click", () => {
+  setLogVisible(result.hidden);
+});
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const settings = Object.fromEntries(new FormData(form));
-  settings.includeNegativeStages = form.includeNegativeStages.checked;
-  const response = await api("/api/settings", { method: "POST", body: JSON.stringify(settings) });
-  setMappingStatus(
-    mappingIsComplete(response.settings) ? "Сопоставление сохранено" : "Часть полей не выбрана",
-    mappingIsComplete(response.settings) ? "success" : "warning",
-  );
-  write(response);
+  try {
+    const settings = Object.fromEntries(new FormData(form));
+    settings.includeNegativeStages = form.includeNegativeStages.checked;
+    const response = await api("/api/settings", { method: "POST", body: JSON.stringify(settings) });
+    setMappingStatus(
+      mappingIsComplete(response.settings) ? "Сопоставление сохранено" : "Часть полей не выбрана",
+      mappingIsComplete(response.settings) ? "success" : "warning",
+    );
+    write(response);
+  } catch (error) {
+    setMappingStatus("Ошибка сохранения", "warning");
+    write(`Ошибка сохранения сопоставления: ${error.message}`, { reveal: true });
+  }
 });
 
 document.querySelector("#ensureFields").addEventListener("click", async () => {
-  setMappingStatus("Создаю стандартные поля...");
-  write("Создаю недостающие поля...");
-  write(await api("/api/fields/ensure", { method: "POST", body: "{}" }));
-  await load();
+  try {
+    setMappingStatus("Создаю стандартные поля...");
+    write("Создаю недостающие поля...");
+    write(await api("/api/fields/ensure", { method: "POST", body: "{}" }), { reveal: true });
+    await load();
+  } catch (error) {
+    setMappingStatus("Ошибка создания полей", "warning");
+    write(`Ошибка создания полей: ${error.message}`, { reveal: true });
+  }
 });
 
-document.querySelector("#dealForm").addEventListener("submit", async (event) => {
+dealForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const dealId = new FormData(event.currentTarget).get("dealId");
-  write(await api("/api/recalculate/deal", { method: "POST", body: JSON.stringify({ dealId }) }));
+  try {
+    const data = new FormData(event.currentTarget);
+    const dealId = dealIdFromText(data.get("dealId")) || dealIdFromText(data.get("dealUrl"));
+    if (!dealId) {
+      write("Укажите ID сделки или ссылку на сделку.", { reveal: true });
+      return;
+    }
+    dealIdInput.value = dealId;
+    const url = dealUrlFromId(dealId);
+    if (url) dealUrlInput.value = url;
+    write(`Пересчитываю сделку #${dealId}...`, { reveal: true });
+    write(
+      await withMinimumDelay(
+        api("/api/recalculate/deal", { method: "POST", body: JSON.stringify({ dealId }) }),
+        recalculationStatusMinMs,
+      ),
+      { reveal: true },
+    );
+  } catch (error) {
+    write(`Ошибка пересчёта сделки: ${error.message}`, { reveal: true });
+  }
 });
 
 document.querySelector("#recent").addEventListener("click", async () => {
-  write("Запускаю пересчёт за 30 дней...");
-  write(await api("/api/recalculate/recent", { method: "POST", body: JSON.stringify({ days: 30 }) }));
+  try {
+    write("Запускаю пересчёт за 30 дней...", { reveal: true });
+    write(await api("/api/recalculate/recent", { method: "POST", body: JSON.stringify({ days: 30 }) }), { reveal: true });
+  } catch (error) {
+    write(`Ошибка пересчёта за 30 дней: ${error.message}`, { reveal: true });
+  }
 });
 
 document.querySelector("#refresh").addEventListener("click", load);
