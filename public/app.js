@@ -42,7 +42,9 @@ function formatLastRun(run) {
 
 function renderAutomation(automation = {}) {
   automationMode.textContent = automation.enabled ? "Фоновый polling" : "Выключен";
-  automationInterval.textContent = automation.enabled ? `каждые ${minutes(automation.intervalMs)} мин.` : "не запущен";
+  automationInterval.textContent = automation.enabled
+    ? `каждые ${minutes(automation.intervalMs)} мин., окно ${automation.recentHours || 7} ч.`
+    : "не запущен";
   automationTracked.textContent = String(automation.trackedDealCount ?? automation.trackedDealIds?.length ?? 0);
   automationLastRun.textContent = formatLastRun(automation.lastRun);
 }

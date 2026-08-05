@@ -13,7 +13,7 @@ const settingsPath = join(dataDir, "settings.json");
 const watchlistPath = join(dataDir, "watchlist.json");
 const invoiceEntityTypeId = 31;
 const autoRecalcIntervalMs = Math.max(60_000, Number(process.env.AUTO_RECALC_INTERVAL_MS || 300_000));
-const autoRecalcRecentDays = Math.max(1, Number(process.env.AUTO_RECALC_RECENT_DAYS || 30));
+const autoRecalcRecentHours = Math.max(1, Number(process.env.AUTO_RECALC_RECENT_HOURS || 7));
 const autoRecalcEnabled = process.env.AUTO_RECALC_ENABLED !== "false";
 let autoRecalcTimer = null;
 let autoRecalcRunning = false;
@@ -161,8 +161,8 @@ async function getInvoicesForDeal(dealId) {
   return response.data || [];
 }
 
-async function recentInvoiceDealIds(days = autoRecalcRecentDays) {
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+async function recentInvoiceDealIds(hours = autoRecalcRecentHours) {
+  const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
   const invoiceResponse = await client.post("/v1/invoices/search", {
     filter: { createdTime: { $gte: since } },
     limit: 500,
@@ -300,10 +300,10 @@ async function recalculateDeal(dealId, settings = null, statuses = null) {
   return result;
 }
 
-async function recalculateRecent(days = 30) {
+async function recalculateRecent(hours = autoRecalcRecentHours) {
   const settings = await readSettings();
   const statuses = await getInvoiceStatuses();
-  const { since, dealIds } = await recentInvoiceDealIds(days);
+  const { since, dealIds } = await recentInvoiceDealIds(hours);
   const results = [];
   for (const dealId of dealIds) {
     try {
@@ -313,14 +313,14 @@ async function recalculateRecent(days = 30) {
     }
   }
 
-  return { since, dealCount: dealIds.length, results };
+  return { since, recentHours: hours, dealCount: dealIds.length, results };
 }
 
-async function recalculateWatchedAndRecent(days = autoRecalcRecentDays) {
+async function recalculateWatchedAndRecent(hours = autoRecalcRecentHours) {
   const settings = await readSettings();
   const statuses = await getInvoiceStatuses();
   const watchlist = await readWatchlist();
-  const recent = await recentInvoiceDealIds(days);
+  const recent = await recentInvoiceDealIds(hours);
   const dealIds = [...new Set([...watchlist.dealIds, ...recent.dealIds])];
   const results = [];
 
@@ -349,7 +349,7 @@ async function runAutoRecalculation(trigger = "timer") {
   autoRecalcRunning = true;
   const startedAt = new Date().toISOString();
   try {
-    const result = await recalculateWatchedAndRecent(autoRecalcRecentDays);
+    const result = await recalculateWatchedAndRecent(autoRecalcRecentHours);
     lastAutoRecalc = { ok: true, trigger, startedAt, finishedAt: new Date().toISOString(), ...result };
     return lastAutoRecalc;
   } catch (error) {
@@ -364,7 +364,7 @@ function automationStatus() {
   return {
     enabled: autoRecalcEnabled,
     intervalMs: autoRecalcIntervalMs,
-    recentDays: autoRecalcRecentDays,
+    recentHours: autoRecalcRecentHours,
     running: autoRecalcRunning,
     lastRun: lastAutoRecalc,
   };
@@ -504,8 +504,9 @@ async function routeApi(req, res, pathname) {
   }
 
   if (pathname === "/api/recalculate/recent" && req.method === "POST") {
-    const { days = 30 } = await readJson(req);
-    return sendJson(res, 200, await recalculateRecent(Number(days) || 30));
+    const body = await readJson(req);
+    const hours = Number(body.hours) || (body.days ? Number(body.days) * 24 : autoRecalcRecentHours);
+    return sendJson(res, 200, await recalculateRecent(hours));
   }
 
   if (pathname === "/api/automation/status" && req.method === "GET") {
