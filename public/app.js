@@ -6,6 +6,10 @@ const dealForm = document.querySelector("#dealForm");
 const dealIdInput = dealForm.elements.dealId;
 const dealUrlInput = dealForm.elements.dealUrl;
 const logToggle = document.querySelector("#logToggle");
+const automationMode = document.querySelector("#automationMode");
+const automationInterval = document.querySelector("#automationInterval");
+const automationTracked = document.querySelector("#automationTracked");
+const automationLastRun = document.querySelector("#automationLastRun");
 
 const recalculationStatusMinMs = 1500;
 let portalHost = "";
@@ -23,6 +27,24 @@ function write(value, { reveal = false } = {}) {
 function setMappingStatus(text, tone = "neutral") {
   mappingStatus.textContent = text;
   mappingStatus.dataset.tone = tone;
+}
+
+function minutes(ms) {
+  return Math.round(ms / 60000);
+}
+
+function formatLastRun(run) {
+  if (!run) return "Пока не запускался";
+  const status = run.ok ? "успешно" : "ошибка";
+  const time = run.finishedAt ? new Date(run.finishedAt).toLocaleTimeString("ru-RU") : "";
+  return `${status}${time ? ` · ${time}` : ""}`;
+}
+
+function renderAutomation(automation = {}) {
+  automationMode.textContent = automation.enabled ? "Фоновый polling" : "Выключен";
+  automationInterval.textContent = automation.enabled ? `каждые ${minutes(automation.intervalMs)} мин.` : "не запущен";
+  automationTracked.textContent = String(automation.trackedDealCount ?? automation.trackedDealIds?.length ?? 0);
+  automationLastRun.textContent = formatLastRun(automation.lastRun);
 }
 
 function delay(ms) {
@@ -82,6 +104,7 @@ async function load() {
   const data = await api("/api/bootstrap");
   portalHost = data.portal || "";
   portal.textContent = `${data.portal} · ${data.accessMode}`;
+  renderAutomation(data.automation);
   for (const select of form.querySelectorAll("select")) {
     fillSelect(select, data.fields, data.settings[select.name]);
   }
@@ -175,10 +198,12 @@ dealForm.addEventListener("submit", async (event) => {
 
 document.querySelector("#recent").addEventListener("click", async () => {
   try {
-    write("Запускаю пересчёт за 30 дней...", { reveal: true });
-    write(await api("/api/recalculate/recent", { method: "POST", body: JSON.stringify({ days: 30 }) }), { reveal: true });
+    write("Запускаю автопересчёт...", { reveal: true });
+    const response = await api("/api/automation/run", { method: "POST", body: "{}" });
+    renderAutomation(response);
+    write(response, { reveal: true });
   } catch (error) {
-    write(`Ошибка пересчёта за 30 дней: ${error.message}`, { reveal: true });
+    write(`Ошибка автопересчёта: ${error.message}`, { reveal: true });
   }
 });
 

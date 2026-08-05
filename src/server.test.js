@@ -111,6 +111,10 @@ test("serves health JSON, left menu page, and deal tab HTML", async () => {
     const tab = await fetch(`http://127.0.0.1:${port}/deal-tab`);
     assert.equal(tab.status, 200);
     assert.match(await tab.text(), /Расчёт оплаты счетов/);
+
+    const menuCss = await fetch(`http://127.0.0.1:${port}/menu.css`);
+    assert.equal(menuCss.status, 200);
+    assert.match(await menuCss.text(), /\.menu-hero/);
   } finally {
     server.close();
   }

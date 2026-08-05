@@ -58,14 +58,16 @@
         <section class="panel automation-panel">
           <h2>Автопересчёт</h2>
           <div class="automation-list">
-            <span>При изменении сделки</span>
-            <strong>Поля пересчитываются событием CRM</strong>
-            <span>При изменении счёта</span>
-            <strong>Связанная сделка пересчитывается по parentId2</strong>
-            <span>Маршрут обработчика</span>
-            <strong>/api/events/bitrix24</strong>
+            <span>Режим</span>
+            <strong id="automationMode">Фоновый polling</strong>
+            <span>Интервал</span>
+            <strong id="automationInterval">Проверяю...</strong>
+            <span>Отслеживается сделок</span>
+            <strong id="automationTracked">Проверяю...</strong>
+            <span>Последний запуск</span>
+            <strong id="automationLastRun">Пока не запускался</strong>
           </div>
-          <button id="recent">Пересчитать счета за 30 дней</button>
+          <button id="recent">Запустить автопересчёт сейчас</button>
         </section>
       </section>
 

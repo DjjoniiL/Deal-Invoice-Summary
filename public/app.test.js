@@ -25,6 +25,8 @@ test("left menu page contains setup, CTA, and recalculation controls", () => {
   assert.match(html, /Нужна доработка этого приложения/);
   assert.match(html, /data-pending-openline-url="Bisness i 24"/);
   assert.match(html, /Пересчитать сделку/);
+  assert.match(html, /id="automationInterval"/);
+  assert.match(html, /Запустить автопересчёт сейчас/);
   assert.match(menuCss, /\.menu-hero/);
   assert.match(menuCss, /\.manual-form/);
 });
@@ -47,4 +49,10 @@ test("manual recalculation accepts deal links and keeps the log collapsible", ()
   assert.match(js, /Пересчитываю сделку #/);
   assert.match(js, /Ошибка пересчёта сделки/);
   assert.match(js, /api\("\/api\/recalculate\/deal"[\s\S]*recalculationStatusMinMs/);
+});
+
+test("left menu shows polling automation status", () => {
+  assert.match(js, /function renderAutomation/);
+  assert.match(js, /\/api\/automation\/run/);
+  assert.match(js, /Фоновый polling/);
 });

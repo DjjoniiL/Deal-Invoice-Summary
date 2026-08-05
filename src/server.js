@@ -10,7 +10,14 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const publicDir = join(root, "public");
 const dataDir = process.env.DATA_DIR || join(root, "data");
 const settingsPath = join(dataDir, "settings.json");
+const watchlistPath = join(dataDir, "watchlist.json");
 const invoiceEntityTypeId = 31;
+const autoRecalcIntervalMs = Math.max(60_000, Number(process.env.AUTO_RECALC_INTERVAL_MS || 300_000));
+const autoRecalcRecentDays = Math.max(1, Number(process.env.AUTO_RECALC_RECENT_DAYS || 30));
+const autoRecalcEnabled = process.env.AUTO_RECALC_ENABLED !== "false";
+let autoRecalcTimer = null;
+let autoRecalcRunning = false;
+let lastAutoRecalc = null;
 
 const client = new VibeClient({
   baseUrl: process.env.VIBE_API_BASE_URL,
@@ -38,6 +45,36 @@ async function saveSettings(settings) {
   const clean = { ...defaults, ...settings };
   await writeFile(settingsPath, JSON.stringify(clean, null, 2));
   return clean;
+}
+
+async function readWatchlist() {
+  try {
+    const payload = JSON.parse(await readFile(watchlistPath, "utf8"));
+    return {
+      dealIds: [...new Set((payload.dealIds || []).map(Number).filter(Boolean))],
+      updatedAt: payload.updatedAt || null,
+    };
+  } catch {
+    return { dealIds: [], updatedAt: null };
+  }
+}
+
+async function saveWatchlist(dealIds) {
+  await mkdir(dataDir, { recursive: true });
+  const clean = {
+    dealIds: [...new Set(dealIds.map(Number).filter(Boolean))].sort((a, b) => a - b),
+    updatedAt: new Date().toISOString(),
+  };
+  await writeFile(watchlistPath, JSON.stringify(clean, null, 2));
+  return clean;
+}
+
+async function trackDealId(dealId) {
+  const normalizedDealId = normalizeDealId(dealId);
+  if (!normalizedDealId) return readWatchlist();
+  const watchlist = await readWatchlist();
+  if (watchlist.dealIds.includes(normalizedDealId)) return watchlist;
+  return saveWatchlist([...watchlist.dealIds, normalizedDealId]);
 }
 
 function sendJson(res, status, payload) {
@@ -122,6 +159,16 @@ async function getInvoicesForDeal(dealId) {
     limit: 200,
   });
   return response.data || [];
+}
+
+async function recentInvoiceDealIds(days = autoRecalcRecentDays) {
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const invoiceResponse = await client.post("/v1/invoices/search", {
+    filter: { createdTime: { $gte: since } },
+    limit: 500,
+  });
+  const dealIds = [...new Set((invoiceResponse.data || []).map((invoice) => Number(invoice.parentId2)).filter(Boolean))];
+  return { since, dealIds };
 }
 
 function userDisplayName(user) {
@@ -248,19 +295,15 @@ async function calculateDeal(dealId, settings = null, statuses = null, write = f
 }
 
 async function recalculateDeal(dealId, settings = null, statuses = null) {
-  return calculateDeal(dealId, settings, statuses, true);
+  const result = await calculateDeal(dealId, settings, statuses, true);
+  await trackDealId(result.dealId);
+  return result;
 }
 
 async function recalculateRecent(days = 30) {
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
   const settings = await readSettings();
   const statuses = await getInvoiceStatuses();
-  const invoiceResponse = await client.post("/v1/invoices/search", {
-    filter: { createdTime: { $gte: since } },
-    limit: 500,
-  });
-
-  const dealIds = [...new Set((invoiceResponse.data || []).map((invoice) => Number(invoice.parentId2)).filter(Boolean))];
+  const { since, dealIds } = await recentInvoiceDealIds(days);
   const results = [];
   for (const dealId of dealIds) {
     try {
@@ -271,6 +314,77 @@ async function recalculateRecent(days = 30) {
   }
 
   return { since, dealCount: dealIds.length, results };
+}
+
+async function recalculateWatchedAndRecent(days = autoRecalcRecentDays) {
+  const settings = await readSettings();
+  const statuses = await getInvoiceStatuses();
+  const watchlist = await readWatchlist();
+  const recent = await recentInvoiceDealIds(days);
+  const dealIds = [...new Set([...watchlist.dealIds, ...recent.dealIds])];
+  const results = [];
+
+  for (const dealId of dealIds) {
+    try {
+      results.push(await recalculateDeal(dealId, settings, statuses));
+    } catch (error) {
+      results.push({ dealId, error: error.message });
+    }
+  }
+
+  return {
+    since: recent.since,
+    trackedDealCount: watchlist.dealIds.length,
+    recentDealCount: recent.dealIds.length,
+    dealCount: dealIds.length,
+    results,
+  };
+}
+
+async function runAutoRecalculation(trigger = "timer") {
+  if (autoRecalcRunning) {
+    return { ok: true, skipped: true, reason: "Auto recalculation already running", trigger };
+  }
+
+  autoRecalcRunning = true;
+  const startedAt = new Date().toISOString();
+  try {
+    const result = await recalculateWatchedAndRecent(autoRecalcRecentDays);
+    lastAutoRecalc = { ok: true, trigger, startedAt, finishedAt: new Date().toISOString(), ...result };
+    return lastAutoRecalc;
+  } catch (error) {
+    lastAutoRecalc = { ok: false, trigger, startedAt, finishedAt: new Date().toISOString(), error: error.message };
+    return lastAutoRecalc;
+  } finally {
+    autoRecalcRunning = false;
+  }
+}
+
+function automationStatus() {
+  return {
+    enabled: autoRecalcEnabled,
+    intervalMs: autoRecalcIntervalMs,
+    recentDays: autoRecalcRecentDays,
+    running: autoRecalcRunning,
+    lastRun: lastAutoRecalc,
+  };
+}
+
+function startAutoRecalculation() {
+  if (!autoRecalcEnabled || autoRecalcTimer) return automationStatus();
+  const initialTimer = setTimeout(() => {
+    runAutoRecalculation("startup").catch((error) => {
+      lastAutoRecalc = { ok: false, trigger: "startup", finishedAt: new Date().toISOString(), error: error.message };
+    });
+  }, 10_000);
+  initialTimer.unref?.();
+  autoRecalcTimer = setInterval(() => {
+    runAutoRecalculation("timer").catch((error) => {
+      lastAutoRecalc = { ok: false, trigger: "timer", finishedAt: new Date().toISOString(), error: error.message };
+    });
+  }, autoRecalcIntervalMs);
+  autoRecalcTimer.unref?.();
+  return automationStatus();
 }
 
 function isInvoiceEvent(event, fields) {
@@ -345,16 +459,18 @@ async function routeApi(req, res, pathname) {
   if (pathname === "/api/health") return sendJson(res, 200, { ok: true });
 
   if (pathname === "/api/bootstrap") {
-    const [settings, fields, me] = await Promise.all([
+    const [settings, fields, me, watchlist] = await Promise.all([
       readSettings(),
       client.get("/v1/deals/fields"),
       client.get("/v1/me"),
+      readWatchlist(),
     ]);
     return sendJson(res, 200, {
       settings,
       fields: fieldOptions(fields.data.fields),
       portal: me.data.portal,
       accessMode: me.data.accessMode,
+      automation: { ...automationStatus(), trackedDealCount: watchlist.dealIds.length },
     });
   }
 
@@ -390,6 +506,17 @@ async function routeApi(req, res, pathname) {
   if (pathname === "/api/recalculate/recent" && req.method === "POST") {
     const { days = 30 } = await readJson(req);
     return sendJson(res, 200, await recalculateRecent(Number(days) || 30));
+  }
+
+  if (pathname === "/api/automation/status" && req.method === "GET") {
+    const watchlist = await readWatchlist();
+    return sendJson(res, 200, { ...automationStatus(), trackedDealIds: watchlist.dealIds });
+  }
+
+  if (pathname === "/api/automation/run" && req.method === "POST") {
+    await runAutoRecalculation("manual");
+    const watchlist = await readWatchlist();
+    return sendJson(res, 200, { ...automationStatus(), trackedDealCount: watchlist.dealIds.length });
   }
 
   if (pathname === "/api/events/bitrix24" && req.method === "POST") {
@@ -437,5 +564,6 @@ export function createApp() {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   createApp().listen(Number(process.env.PORT || 3000), "0.0.0.0", () => {
     console.log(`Deal Invoice Summary is running on port ${process.env.PORT || 3000}`);
+    startAutoRecalculation();
   });
 }
