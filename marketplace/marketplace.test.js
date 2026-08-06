@@ -28,6 +28,7 @@ test("marketplace installer completes install and binds the deal tab", () => {
   assert.match(installJs, /placement\.bind/);
   assert.match(installJs, /LEFT_MENU/);
   assert.match(installJs, /CRM_DEAL_DETAIL_TAB/);
+  assert.match(installJs, /Не удалось зарегистрировать все места встройки/);
   assert.match(installJs, /BX24\.installFinish/);
 });
 
@@ -36,6 +37,10 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
   assert.match(appJs, /crm\.item\.list/);
   assert.match(appJs, /crm\.deal\.update/);
   assert.match(appJs, /crm\.deal\.userfield\.add/);
+  assert.match(appJs, /crm\.deal\.userfield\.update/);
+  assert.match(appJs, /crm\.item\.details\.configuration\.get/);
+  assert.match(appJs, /crm\.item\.details\.configuration\.set/);
+  assert.match(appJs, /deal_invoice_summary/);
   assert.doesNotMatch(appJs, /vibecode\.bitrix24\.tech/);
   assert.doesNotMatch(appJs, /\/api\/recalculate/);
 });

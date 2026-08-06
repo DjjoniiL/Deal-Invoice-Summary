@@ -49,8 +49,15 @@ async function finishInstall() {
     }
   }
 
-  statusNode.textContent = "Завершаю установку...";
   writeLog({ handler, placements: results });
+  const failed = results.filter((result) => result.error);
+  if (failed.length) {
+    installButton.disabled = false;
+    statusNode.textContent = "Не удалось зарегистрировать все места встройки. Подробности в журнале.";
+    return;
+  }
+
+  statusNode.textContent = "Завершаю установку...";
   BX24.installFinish();
 }
 

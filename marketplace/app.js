@@ -5,6 +5,8 @@ const defaultSettings = {
   unpaidField: "UF_CRM_INV_SUM_UNPAID",
   remainingField: "UF_CRM_INV_SUM_REMAINING",
 };
+const dealSummarySectionName = "deal_invoice_summary";
+const dealSummarySectionTitle = "Расчёт оплаты счетов";
 
 const moneyFormat = new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 });
 const form = document.querySelector("#settings");
@@ -126,13 +128,82 @@ function normalizeFieldName(value) {
   return String(value || "").toUpperCase();
 }
 
-function renderFields(fields, settings) {
+function dealFieldToBitrixName(fieldId) {
+  const text = String(fieldId || "").trim();
+  return text ? text.toUpperCase() : "";
+}
+
+function configuredDealFieldNames(settings) {
+  return [
+    settings.issuedField,
+    settings.paidField,
+    settings.unpaidField,
+    settings.remainingField,
+  ].map(dealFieldToBitrixName).filter(Boolean);
+}
+
+function mergeDealSummarySection(layout, fieldNames) {
+  if (!Array.isArray(layout)) return null;
+  const uniqueFieldNames = [...new Set(fieldNames.filter(Boolean))];
+  if (!uniqueFieldNames.length) return layout;
+
+  const targetNames = new Set(uniqueFieldNames);
+  const cleanedSections = layout
+    .filter((section) => section?.name !== dealSummarySectionName)
+    .map((section) => ({
+      ...section,
+      elements: (section.elements || []).filter((element) => !targetNames.has(String(element.name || "").toUpperCase())),
+    }));
+
+  cleanedSections.push({
+    name: dealSummarySectionName,
+    title: dealSummarySectionTitle,
+    type: "section",
+    elements: uniqueFieldNames.map((name) => ({ name, optionFlags: 0 })),
+  });
+
+  return cleanedSections;
+}
+
+async function configureDealCardSection(settings) {
+  const fieldNames = configuredDealFieldNames(settings);
+  if (fieldNames.length < 4) return { ok: false, skipped: true, reason: "Field mapping is incomplete" };
+
+  const response = await callMethod("crm.item.details.configuration.get", { entityTypeId: 2, scope: "C" });
+  const current = response?.data || response;
+  const data = mergeDealSummarySection(current, fieldNames);
+  if (!data) return { ok: false, skipped: true, reason: "Common deal card layout is not configured" };
+
+  await callMethod("crm.item.details.configuration.set", { entityTypeId: 2, scope: "C", data });
+  return { ok: true, sectionName: dealSummarySectionName, fieldNames };
+}
+
+function fieldLabel(field, userFieldLabels) {
+  const id = String(field.FIELD_NAME || field.fieldName || "");
+  return (
+    userFieldLabels.get(id.toUpperCase()) ||
+    field.title ||
+    field.formLabel ||
+    field.FORM_LABEL ||
+    field.EDIT_FORM_LABEL ||
+    field.LIST_COLUMN_LABEL ||
+    id
+  );
+}
+
+function renderFields(fields, userFields, settings) {
+  const userFieldLabels = new Map(
+    userFields.map((field) => [
+      String(field.FIELD_NAME || "").toUpperCase(),
+      field.EDIT_FORM_LABEL || field.LIST_COLUMN_LABEL || field.LIST_FILTER_LABEL || field.FIELD_NAME,
+    ]),
+  );
   const available = Object.entries(fields)
     .filter(([, field]) => ["double", "integer", "money", "string"].includes(field.type || field.TYPE || field.USER_TYPE_ID))
     .map(([id, field]) => ({
       id,
       type: field.type || field.TYPE || field.USER_TYPE_ID || "",
-      label: field.title || field.formLabel || field.FORM_LABEL || field.EDIT_FORM_LABEL || field.LIST_COLUMN_LABEL || id,
+      label: fieldLabel({ ...field, FIELD_NAME: id }, userFieldLabels),
     }))
     .sort((a, b) => a.label.localeCompare(b.label, "ru"));
   for (const select of form.querySelectorAll("select")) {
@@ -150,21 +221,25 @@ async function ensureFields() {
     ["INV_SUM_REMAINING", "Остаток оплаты по счетам"],
   ];
   const existing = await callList("crm.deal.userfield.list");
-  const names = new Set(existing.map((field) => field.FIELD_NAME));
+  const byName = new Map(existing.map((field) => [String(field.FIELD_NAME || "").toUpperCase(), field]));
   for (const [name, label] of wanted) {
     const fieldName = `UF_CRM_${name}`;
-    if (names.has(fieldName)) continue;
-    await callMethod("crm.deal.userfield.add", {
-      fields: {
+    const fields = {
         FIELD_NAME: name,
         USER_TYPE_ID: "double",
         EDIT_FORM_LABEL: label,
         LIST_COLUMN_LABEL: label,
+        LIST_FILTER_LABEL: label,
+        ERROR_MESSAGE: "",
+        HELP_MESSAGE: "",
         EDIT_IN_LIST: "N",
-      },
-    });
+    };
+    const existingField = byName.get(fieldName);
+    if (existingField?.ID) await callMethod("crm.deal.userfield.update", { id: existingField.ID, fields });
+    else await callMethod("crm.deal.userfield.add", { fields });
   }
   await saveSettings(defaultSettings);
+  await configureDealCardSection(defaultSettings);
 }
 
 async function getInvoices(dealId) {
@@ -271,8 +346,11 @@ async function initApp() {
   portalHost = window.BX24?.getDomain?.() || "";
   portal.textContent = portalHost ? `${portalHost} · Bitrix24 Marketplace` : "Bitrix24 Marketplace";
   const settings = await loadSettings();
-  const fields = await callMethod("crm.deal.fields");
-  renderFields(fields, settings);
+  const [fields, userFields] = await Promise.all([
+    callMethod("crm.deal.fields"),
+    callList("crm.deal.userfield.list"),
+  ]);
+  renderFields(fields, userFields, settings);
   form.includeNegativeStages.checked = Boolean(settings.includeNegativeStages);
   setMappingStatus("Сопоставление готово.", "success");
   write("Настройки загружены.");
@@ -292,8 +370,14 @@ form.addEventListener("submit", async (event) => {
   const settings = Object.fromEntries(new FormData(form));
   settings.includeNegativeStages = form.includeNegativeStages.checked;
   await saveSettings(settings);
+  let card = null;
+  try {
+    card = await configureDealCardSection(settings);
+  } catch (error) {
+    card = { ok: false, error: error.message };
+  }
   setMappingStatus("Сопоставление сохранено.", "success");
-  write({ settings });
+  write({ settings, dealCard: card });
 });
 
 dealForm.addEventListener("submit", async (event) => {
