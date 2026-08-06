@@ -5,6 +5,7 @@ const defaultSettings = {
   unpaidField: "UF_CRM_INV_SUM_UNPAID",
   remainingField: "UF_CRM_INV_SUM_REMAINING",
 };
+const appVersion = "labels-20260806-1";
 const dealSummarySectionName = "deal_invoice_summary";
 const dealSummarySectionTitle = "Расчёт оплаты счетов";
 const defaultFieldLabels = new Map([
@@ -34,6 +35,8 @@ const totalNodes = {
 };
 let currentReport = null;
 let portalHost = "";
+
+console.info(`Deal Invoice Summary Marketplace ${appVersion}`);
 
 function setLogVisible(visible) {
   resultNode.hidden = !visible;
@@ -131,12 +134,22 @@ async function saveSettings(settings) {
 }
 
 function normalizeFieldName(value) {
-  return String(value || "").toUpperCase();
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (/^UF_CRM_/i.test(text)) return text.toUpperCase();
+  if (/^ufCrm_/i.test(text)) return `UF_CRM_${text.slice(6).toUpperCase()}`;
+  if (/^ufCrm[A-Z0-9]/.test(text)) {
+    return `UF_CRM_${text
+      .slice(5)
+      .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+      .toUpperCase()}`;
+  }
+  return text.toUpperCase();
 }
 
 function dealFieldToBitrixName(fieldId) {
   const text = String(fieldId || "").trim();
-  return text ? text.toUpperCase() : "";
+  return normalizeFieldName(text);
 }
 
 function configuredDealFieldNames(settings) {
@@ -205,7 +218,7 @@ async function configureDealCardSection(settings) {
 
 function fieldLabel(field, userFieldLabels) {
   const id = String(field.FIELD_NAME || field.fieldName || "");
-  const normalizedId = id.toUpperCase();
+  const normalizedId = normalizeFieldName(id);
   const defaultLabel = defaultFieldLabels.get(normalizedId);
   if (defaultLabel) return defaultLabel;
 

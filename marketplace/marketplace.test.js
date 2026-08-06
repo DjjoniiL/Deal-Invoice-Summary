@@ -14,6 +14,8 @@ test("marketplace archive has static Bitrix24 entry files", () => {
   assert.match(installHtml, /install\.js/);
   assert.match(indexHtml, /style\.css/);
   assert.match(indexHtml, /app\.js/);
+  assert.match(indexHtml, /app\.js\?v=labels-20260806-1/);
+  assert.match(indexHtml, /style\.css\?v=labels-20260806-1/);
   assert.match(installHtml, /api\.bitrix24\.com\/api\/v1/);
   assert.match(indexHtml, /api\.bitrix24\.com\/api\/v1/);
 });
@@ -44,6 +46,7 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
   assert.match(appJs, /deal_invoice_summary/);
   assert.match(appJs, /defaultFieldLabels/);
   assert.match(appJs, /if \(defaultLabel\) return defaultLabel/);
+  assert.match(appJs, /\^ufCrm\[A-Z0-9\]/);
   assert.match(appJs, /Сумма выставленных счетов/);
   assert.doesNotMatch(appJs, /vibecode\.bitrix24\.tech/);
   assert.doesNotMatch(appJs, /\/api\/recalculate/);
