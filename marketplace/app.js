@@ -5,7 +5,7 @@ const defaultSettings = {
   unpaidField: "UF_CRM_INV_SUM_UNPAID",
   remainingField: "UF_CRM_INV_SUM_REMAINING",
 };
-const appVersion = "labels-20260806-1";
+const appVersion = "layout-20260806-2";
 const dealSummarySectionName = "deal_invoice_summary";
 const dealSummarySectionTitle = "Расчёт оплаты счетов";
 const defaultFieldLabels = new Map([
@@ -449,39 +449,52 @@ async function initApp() {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const settings = Object.fromEntries(new FormData(form));
-  settings.includeNegativeStages = form.includeNegativeStages.checked;
-  await saveSettings(settings);
-  let card = null;
   try {
+    const settings = Object.fromEntries(new FormData(form));
+    settings.includeNegativeStages = form.includeNegativeStages.checked;
+    await saveSettings(settings);
+    let card = null;
     card = await configureDealCardSection(settings);
+    setMappingStatus(card?.ok ? "Сопоставление сохранено. Раздел карточки обновлён." : "Сопоставление сохранено. Проверьте журнал.", card?.ok ? "success" : "warning");
+    write({ appVersion, settings, dealCard: card });
   } catch (error) {
-    card = { ok: false, error: error.message };
+    setMappingStatus("Ошибка сохранения. Проверьте журнал.", "warning");
+    write({ appVersion, ok: false, operation: "save-mapping", error: error.message }, { reveal: true });
   }
-  setMappingStatus(card?.ok ? "Сопоставление сохранено. Раздел карточки обновлён." : "Сопоставление сохранено. Проверьте журнал.", card?.ok ? "success" : "warning");
-  write({ settings, dealCard: card });
 });
 
 dealForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const data = new FormData(dealForm);
-  const dealId = Number(dealIdFromText(data.get("dealId")) || dealIdFromText(data.get("dealUrl")));
-  if (!dealId) return;
-  dealIdInput.value = dealId;
-  const url = dealUrlFromId(dealId);
-  if (url) dealUrlInput.value = url;
-  write(`Пересчитываю сделку #${dealId}...`, { reveal: true });
-  const result = await recalculate(dealId, true);
-  renderResult(dealId, result);
-  write({ ok: true, message: "Поля сделки обновлены.", summary: result.summary }, { reveal: true });
+  try {
+    const data = new FormData(dealForm);
+    const dealId = Number(dealIdFromText(data.get("dealId")) || dealIdFromText(data.get("dealUrl")));
+    if (!dealId) {
+      write("Укажите ID сделки или ссылку на сделку.", { reveal: true });
+      return;
+    }
+    dealIdInput.value = dealId;
+    const url = dealUrlFromId(dealId);
+    if (url) dealUrlInput.value = url;
+    write(`Пересчитываю сделку #${dealId}...`, { reveal: true });
+    const result = await recalculate(dealId, true);
+    renderResult(dealId, result);
+    write({ appVersion, ok: true, message: "Поля сделки обновлены.", summary: result.summary }, { reveal: true });
+  } catch (error) {
+    write({ appVersion, ok: false, operation: "manual-recalculate", error: error.message }, { reveal: true });
+  }
 });
 
 document.querySelector("#ensureFields").addEventListener("click", async () => {
-  setMappingStatus("Создаю стандартные поля...");
-  const card = await ensureFields();
-  write({ standardFields: "created-or-updated", dealCard: card }, { reveal: !card?.ok });
-  await initApp();
-  setMappingStatus(card?.ok ? "Поля созданы. Раздел карточки обновлён." : "Поля созданы. Проверьте журнал.", card?.ok ? "success" : "warning");
+  try {
+    setMappingStatus("Создаю стандартные поля...");
+    const card = await ensureFields();
+    write({ appVersion, standardFields: "created-or-updated", dealCard: card }, { reveal: !card?.ok });
+    await initApp();
+    setMappingStatus(card?.ok ? "Поля созданы. Раздел карточки обновлён." : "Поля созданы. Проверьте журнал.", card?.ok ? "success" : "warning");
+  } catch (error) {
+    setMappingStatus("Ошибка создания полей. Проверьте журнал.", "warning");
+    write({ appVersion, ok: false, operation: "ensure-fields", error: error.message }, { reveal: true });
+  }
 });
 
 document.querySelector("#refresh").addEventListener("click", initApp);
