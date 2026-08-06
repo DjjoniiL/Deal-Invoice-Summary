@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="style.css">
+    <title>Калькулятор счетов</title>
+    <script src="//api.bitrix24.com/api/v1/"></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="topbar">
+        <div>
+          <p>Deal Invoice Summary</p>
+          <h1>Калькулятор счетов</h1>
+        </div>
+        <button id="refresh" type="button">Обновить</button>
+      </section>
+
+      <section class="grid">
+        <form id="settings" class="panel">
+          <h2>Сопоставление полей сделки</h2>
+          <div class="field-grid">
+            <label>Выставлено<select name="issuedField"></select></label>
+            <label>Оплачено<select name="paidField"></select></label>
+            <label>Не оплачено<select name="unpaidField"></select></label>
+            <label>Остаток<select name="remainingField"></select></label>
+          </div>
+          <label class="check">
+            <input type="checkbox" name="includeNegativeStages">
+            Учитывать отрицательные стадии счетов
+          </label>
+          <div class="actions">
+            <button type="button" id="ensureFields">Создать поля</button>
+            <button type="submit">Сохранить</button>
+          </div>
+          <p id="settingsStatus">Загружаю настройки...</p>
+        </form>
+
+        <section class="panel">
+          <h2>Ручная проверка</h2>
+          <form id="dealForm" class="manual-form">
+            <label>ID сделки<input name="dealId" inputmode="numeric" placeholder="2"></label>
+            <button>Пересчитать</button>
+          </form>
+          <div class="totals">
+            <span>Выставлено<strong id="issued">0</strong></span>
+            <span>Оплачено<strong id="paid">0</strong></span>
+            <span>Не оплачено<strong id="unpaid">0</strong></span>
+            <span>Остаток<strong id="remaining">0</strong></span>
+          </div>
+          <p id="dealStatus">Ожидаю сделку.</p>
+        </section>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2 id="dealTitle">Счета сделки</h2>
+          <button id="downloadReport" type="button">Скачать отчёт</button>
+        </div>
+        <div id="invoiceList" class="invoice-list"></div>
+      </section>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>

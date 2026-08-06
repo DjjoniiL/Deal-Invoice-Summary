@@ -3,5 +3,6 @@
   "issuedField": "ufCrmInvSumIssued",
   "paidField": "ufCrmInvSumPaid",
   "unpaidField": "ufCrm_1785930142",
-  "remainingField": "ufCrmInvSumRemaining"
+  "remainingField": "ufCrmInvSumRemaining",
+  "autoRecalcMode": "twiceDaily"
 }

@@ -12,6 +12,7 @@ import {
   mergeDealSummarySection,
   normalizeDealId,
   parseBitrixForm,
+  pushEventDefinitions,
   reportDate,
   toCsv,
 } from "./server.js";
@@ -56,6 +57,14 @@ test("parses nested Bitrix24 event form payloads", () => {
     data: { FIELDS: { ID: "2" } },
     auth: { application_token: "token", domain: "example.bitrix24.ru" },
   });
+});
+
+test("documents push event definitions for continuous mode", () => {
+  assert.deepEqual(
+    pushEventDefinitions.map((item) => item.event),
+    ["ONCRMDEALUPDATE", "ONCRMDYNAMICITEMADD", "ONCRMDYNAMICITEMUPDATE", "ONCRMDYNAMICITEMDELETE"],
+  );
+  assert.ok(pushEventDefinitions.slice(1).every((item) => item.entityTypeId === 31));
 });
 
 test("builds deal card field names and merges summary section", () => {

@@ -64,6 +64,8 @@ test("left menu shows polling automation status", () => {
   assert.match(js, /function renderAutomation/);
   assert.match(js, /\/api\/automation\/run/);
   assert.match(js, /automationMode\.value/);
+  assert.match(js, /settings\.autoRecalcMode = automationMode\.value/);
+  assert.match(js, /pushEvents\?\.active/);
   assert.match(js, /setAutomationProgress/);
   assert.match(js, /recentDays/);
   assert.match(js, /09:44/);

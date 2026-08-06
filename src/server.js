@@ -11,10 +11,12 @@ const publicDir = join(root, "public");
 const dataDir = process.env.DATA_DIR || join(root, "data");
 const settingsPath = join(dataDir, "settings.json");
 const watchlistPath = join(dataDir, "watchlist.json");
+const invoiceLinksPath = join(dataDir, "invoice-links.json");
 const invoiceEntityTypeId = 31;
 const dealEntityTypeId = 2;
 const dealSummarySectionName = "deal_invoice_summary";
 const dealSummarySectionTitle = "Расчёт оплаты счетов";
+const autoRecalcModes = new Set(["twiceDaily", "continuous"]);
 const autoRecalcWindowDaysOptions = [42, 28, 21, 14, 7, 2];
 const defaultAutoRecalcWindowDays = normalizeAutoRecalcWindowDays(
   process.env.AUTO_RECALC_RECENT_HOURS ? Number(process.env.AUTO_RECALC_RECENT_HOURS) / 24 : 21,
@@ -24,6 +26,12 @@ const autoRecalcEnabled = process.env.AUTO_RECALC_ENABLED !== "false";
 const wakeSchedule = [
   { cronExpr: "44 9 * * *", timezone: "Europe/Moscow", label: "Morning wake 09:44 MSK" },
   { cronExpr: "44 18 * * *", timezone: "Europe/Moscow", label: "Evening wake 18:44 MSK" },
+];
+export const pushEventDefinitions = [
+  { event: "ONCRMDEALUPDATE", reason: "Deal amount or stage changed" },
+  { event: "ONCRMDYNAMICITEMADD", entityTypeId: invoiceEntityTypeId, reason: "Linked invoice created" },
+  { event: "ONCRMDYNAMICITEMUPDATE", entityTypeId: invoiceEntityTypeId, reason: "Linked invoice amount or stage changed" },
+  { event: "ONCRMDYNAMICITEMDELETE", entityTypeId: invoiceEntityTypeId, reason: "Linked invoice deleted" },
 ];
 let autoRecalcTimer = null;
 let autoRecalcRunning = false;
@@ -40,6 +48,7 @@ const defaults = {
   paidField: "",
   unpaidField: "",
   remainingField: "",
+  autoRecalcMode: "twiceDaily",
   autoRecalcWindowDays: defaultAutoRecalcWindowDays,
 };
 
@@ -51,6 +60,7 @@ function normalizeAutoRecalcWindowDays(value) {
 function normalizeSettings(settings = {}) {
   const clean = { ...defaults, ...settings };
   clean.includeNegativeStages = Boolean(clean.includeNegativeStages);
+  clean.autoRecalcMode = autoRecalcModes.has(clean.autoRecalcMode) ? clean.autoRecalcMode : "twiceDaily";
   clean.autoRecalcWindowDays = normalizeAutoRecalcWindowDays(clean.autoRecalcWindowDays);
   return clean;
 }
@@ -90,6 +100,59 @@ async function saveWatchlist(dealIds) {
   };
   await writeFile(watchlistPath, JSON.stringify(clean, null, 2));
   return clean;
+}
+
+async function readInvoiceLinks() {
+  try {
+    const payload = JSON.parse(await readFile(invoiceLinksPath, "utf8"));
+    return {
+      invoices: Object.fromEntries(
+        Object.entries(payload.invoices || {})
+          .map(([invoiceId, dealId]) => [String(Number(invoiceId)), Number(dealId)])
+          .filter(([invoiceId, dealId]) => Number(invoiceId) && dealId),
+      ),
+      updatedAt: payload.updatedAt || null,
+    };
+  } catch {
+    return { invoices: {}, updatedAt: null };
+  }
+}
+
+async function saveInvoiceLinks(invoices) {
+  await mkdir(dataDir, { recursive: true });
+  const clean = {
+    invoices: Object.fromEntries(
+      Object.entries(invoices)
+        .map(([invoiceId, dealId]) => [String(Number(invoiceId)), Number(dealId)])
+        .filter(([invoiceId, dealId]) => Number(invoiceId) && dealId)
+        .sort(([a], [b]) => Number(a) - Number(b)),
+    ),
+    updatedAt: new Date().toISOString(),
+  };
+  await writeFile(invoiceLinksPath, JSON.stringify(clean, null, 2));
+  return clean;
+}
+
+async function syncInvoiceDealLinks(dealId, invoices) {
+  const normalizedDealId = normalizeDealId(dealId);
+  if (!normalizedDealId) return readInvoiceLinks();
+
+  const links = await readInvoiceLinks();
+  const activeInvoiceIds = new Set(invoices.map((invoice) => String(Number(invoice.id))).filter((id) => Number(id)));
+  for (const [invoiceId, linkedDealId] of Object.entries(links.invoices)) {
+    if (Number(linkedDealId) === normalizedDealId && !activeInvoiceIds.has(invoiceId)) {
+      delete links.invoices[invoiceId];
+    }
+  }
+  for (const invoiceId of activeInvoiceIds) links.invoices[invoiceId] = normalizedDealId;
+  return saveInvoiceLinks(links.invoices);
+}
+
+async function linkedDealIdForInvoice(invoiceId) {
+  const normalizedInvoiceId = normalizeDealId(invoiceId);
+  if (!normalizedInvoiceId) return 0;
+  const links = await readInvoiceLinks();
+  return normalizeDealId(links.invoices[String(normalizedInvoiceId)]);
 }
 
 async function trackDealId(dealId) {
@@ -233,7 +296,7 @@ async function getInvoicesForDeal(dealId) {
   return response.data || [];
 }
 
-async function recentInvoiceDealIds(hours = autoRecalcRecentHours) {
+async function recentInvoiceDealIds(hours = defaultAutoRecalcWindowDays * 24) {
   const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
   const invoiceResponse = await client.post("/v1/invoices/search", {
     filter: { createdTime: { $gte: since } },
@@ -334,6 +397,7 @@ async function calculateDeal(dealId, settings = null, statuses = null, write = f
   ]);
 
   const deal = dealResponse.data;
+  await syncInvoiceDealLinks(normalizedDealId, invoices);
   const users = await getUsersMap(invoices.map((invoice) => invoice.assignedById));
   const summary = summarizeInvoices(deal, invoices, {
     includeNegativeStages: activeSettings.includeNegativeStages,
@@ -437,13 +501,24 @@ async function runAutoRecalculation(trigger = "timer") {
 
 function automationStatus(settings = defaults) {
   const recentDays = normalizeAutoRecalcWindowDays(settings.autoRecalcWindowDays);
+  const mode = autoRecalcModes.has(settings.autoRecalcMode) ? settings.autoRecalcMode : "twiceDaily";
+  const pushEventsEnabled = process.env.PUSH_EVENTS_ENABLED === "true";
   return {
     enabled: autoRecalcEnabled,
+    mode,
     intervalMs: autoRecalcIntervalMs,
     recentDays,
     recentHours: recentDays * 24,
     windowDayOptions: autoRecalcWindowDaysOptions,
     wakeSchedule,
+    pushEvents: {
+      enabled: pushEventsEnabled,
+      active: pushEventsEnabled && mode === "continuous",
+      handlerPath: "/api/events/bitrix24",
+      requiredAccessPolicy: "PUBLIC",
+      definitions: pushEventDefinitions,
+      fallback: "polling",
+    },
     running: autoRecalcRunning,
     lastRun: lastAutoRecalc,
   };
@@ -485,8 +560,15 @@ async function eventInvoiceDealId(fields) {
   const invoiceId = normalizeDealId(fields.ID || fields.id);
   if (!invoiceId) return 0;
 
-  const response = await client.get(`/v1/invoices/${encodeURIComponent(invoiceId)}`);
-  return normalizeDealId(response.data?.parentId2 || response.data?.PARENT_ID_2);
+  const cachedDealId = await linkedDealIdForInvoice(invoiceId);
+  if (cachedDealId) return cachedDealId;
+
+  try {
+    const response = await client.get(`/v1/invoices/${encodeURIComponent(invoiceId)}`);
+    return normalizeDealId(response.data?.parentId2 || response.data?.PARENT_ID_2);
+  } catch {
+    return 0;
+  }
 }
 
 export async function handleBitrixEvent(payload) {

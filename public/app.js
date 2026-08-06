@@ -66,9 +66,10 @@ function setAutomationProgress(text, percent, { visible = true, tone = "active" 
 }
 
 function renderAutomation(automation = {}) {
-  automationMode.value = automation.enabled ? "twiceDaily" : "twiceDaily";
+  automationMode.value = automation.mode || "twiceDaily";
+  const pushNote = automation.pushEvents?.active ? ", push-события активны" : "";
   automationInterval.textContent = automation.enabled
-    ? `каждые ${minutes(automation.intervalMs)} мин., окно ${days(automation.recentDays)} сут.`
+    ? `каждые ${minutes(automation.intervalMs)} мин., окно ${days(automation.recentDays)} сут.${pushNote}`
     : "не запущен";
   automationWake.textContent = (automation.wakeSchedule || [])
     .map((schedule) => schedule.cronExpr === "44 9 * * *" ? "09:44" : schedule.cronExpr === "44 18 * * *" ? "18:44" : schedule.label)
@@ -179,6 +180,7 @@ form.addEventListener("submit", async (event) => {
   try {
     const settings = Object.fromEntries(new FormData(form));
     settings.includeNegativeStages = form.includeNegativeStages.checked;
+    settings.autoRecalcMode = automationMode.value;
     settings.autoRecalcWindowDays = Number(settings.autoRecalcWindowDays);
     const response = await api("/api/settings", { method: "POST", body: JSON.stringify(settings) });
     setMappingStatus(
