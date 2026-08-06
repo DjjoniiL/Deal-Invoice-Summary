@@ -37,10 +37,13 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
   assert.match(appJs, /crm\.deal\.update/);
   assert.match(appJs, /crm\.deal\.userfield\.add/);
   assert.match(appJs, /crm\.deal\.userfield\.update/);
+  assert.match(appJs, /crm\.deal\.details\.configuration\.get/);
+  assert.match(appJs, /crm\.deal\.details\.configuration\.set/);
   assert.match(appJs, /crm\.item\.details\.configuration\.get/);
   assert.match(appJs, /crm\.item\.details\.configuration\.set/);
   assert.match(appJs, /deal_invoice_summary/);
   assert.match(appJs, /defaultFieldLabels/);
+  assert.match(appJs, /if \(defaultLabel\) return defaultLabel/);
   assert.match(appJs, /Сумма выставленных счетов/);
   assert.doesNotMatch(appJs, /vibecode\.bitrix24\.tech/);
   assert.doesNotMatch(appJs, /\/api\/recalculate/);

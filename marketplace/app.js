@@ -175,24 +175,45 @@ async function configureDealCardSection(settings) {
   const fieldNames = configuredDealFieldNames(settings);
   if (fieldNames.length < 4) return { ok: false, skipped: true, reason: "Field mapping is incomplete" };
 
-  const response = await callMethod("crm.item.details.configuration.get", { entityTypeId: 2, scope: "C" });
-  const current = response?.data || response;
-  const data = mergeDealSummarySection(current, fieldNames);
-  if (!data) return { ok: false, skipped: true, reason: "Common deal card layout is not configured" };
+  const attempts = [];
+  const methods = [
+    { get: "crm.deal.details.configuration.get", set: "crm.deal.details.configuration.set", baseParams: {} },
+    { get: "crm.item.details.configuration.get", set: "crm.item.details.configuration.set", baseParams: { entityTypeId: 2 } },
+  ];
 
-  await callMethod("crm.item.details.configuration.set", { entityTypeId: 2, scope: "C", data });
-  return { ok: true, sectionName: dealSummarySectionName, fieldNames };
+  for (const scope of ["C", "P"]) {
+    for (const method of methods) {
+      try {
+        const response = await callMethod(method.get, { ...method.baseParams, scope });
+        const current = response?.data || response;
+        const data = mergeDealSummarySection(current, fieldNames);
+        if (!data) {
+          attempts.push({ method: method.get, scope, ok: false, error: "Card layout is empty" });
+          continue;
+        }
+
+        await callMethod(method.set, { ...method.baseParams, scope, data });
+        return { ok: true, method: method.set, scope, sectionName: dealSummarySectionName, fieldNames };
+      } catch (error) {
+        attempts.push({ method: method.set, scope, ok: false, error: error.message });
+      }
+    }
+  }
+
+  return { ok: false, attempts, error: "Could not update deal card layout" };
 }
 
 function fieldLabel(field, userFieldLabels) {
   const id = String(field.FIELD_NAME || field.fieldName || "");
   const normalizedId = id.toUpperCase();
+  const defaultLabel = defaultFieldLabels.get(normalizedId);
+  if (defaultLabel) return defaultLabel;
+
   const restLabel = field.title || field.formLabel || field.FORM_LABEL || field.EDIT_FORM_LABEL || field.LIST_COLUMN_LABEL;
   if (!restLabel || String(restLabel).toUpperCase() === normalizedId) {
-    return userFieldLabels.get(normalizedId) || defaultFieldLabels.get(normalizedId) || id;
+    return userFieldLabels.get(normalizedId) || id;
   }
   return (
-    defaultFieldLabels.get(normalizedId) ||
     userFieldLabels.get(normalizedId) ||
     restLabel ||
     id
@@ -234,7 +255,7 @@ async function ensureFields() {
   const byName = new Map(existing.map((field) => [String(field.FIELD_NAME || "").toUpperCase(), field]));
   for (const [name, label] of wanted) {
     const fieldName = `UF_CRM_${name}`;
-    const fields = {
+    const createFields = {
         FIELD_NAME: name,
         USER_TYPE_ID: "double",
         EDIT_FORM_LABEL: label,
@@ -244,12 +265,20 @@ async function ensureFields() {
         HELP_MESSAGE: "",
         EDIT_IN_LIST: "N",
     };
+    const updateFields = {
+      EDIT_FORM_LABEL: label,
+      LIST_COLUMN_LABEL: label,
+      LIST_FILTER_LABEL: label,
+      ERROR_MESSAGE: "",
+      HELP_MESSAGE: "",
+      EDIT_IN_LIST: "N",
+    };
     const existingField = byName.get(fieldName);
-    if (existingField?.ID) await callMethod("crm.deal.userfield.update", { id: existingField.ID, fields });
-    else await callMethod("crm.deal.userfield.add", { fields });
+    if (existingField?.ID) await callMethod("crm.deal.userfield.update", { id: existingField.ID, fields: updateFields });
+    else await callMethod("crm.deal.userfield.add", { fields: createFields });
   }
   await saveSettings(defaultSettings);
-  await configureDealCardSection(defaultSettings);
+  return configureDealCardSection(defaultSettings);
 }
 
 async function getInvoices(dealId) {
@@ -386,7 +415,7 @@ form.addEventListener("submit", async (event) => {
   } catch (error) {
     card = { ok: false, error: error.message };
   }
-  setMappingStatus("Сопоставление сохранено.", "success");
+  setMappingStatus(card?.ok ? "Сопоставление сохранено. Раздел карточки обновлён." : "Сопоставление сохранено. Проверьте журнал.", card?.ok ? "success" : "warning");
   write({ settings, dealCard: card });
 });
 
@@ -406,8 +435,10 @@ dealForm.addEventListener("submit", async (event) => {
 
 document.querySelector("#ensureFields").addEventListener("click", async () => {
   setMappingStatus("Создаю стандартные поля...");
-  await ensureFields();
+  const card = await ensureFields();
+  write({ standardFields: "created-or-updated", dealCard: card }, { reveal: !card?.ok });
   await initApp();
+  setMappingStatus(card?.ok ? "Поля созданы. Раздел карточки обновлён." : "Поля созданы. Проверьте журнал.", card?.ok ? "success" : "warning");
 });
 
 document.querySelector("#refresh").addEventListener("click", initApp);
