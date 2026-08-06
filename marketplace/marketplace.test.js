@@ -26,10 +26,9 @@ test("marketplace runtime package stays serverless", () => {
   assert.deepEqual(runtimeFiles.sort(), ["app.js", "index.html", "install.css", "install.html", "install.js", "style.css"]);
 });
 
-test("marketplace installer completes install and binds the deal tab", () => {
-  assert.match(installJs, /placement\.bind/);
-  assert.match(installJs, /CRM_DEAL_DETAIL_TAB/);
-  assert.match(installJs, /Не удалось зарегистрировать все места встройки/);
+test("marketplace installer completes install without server-side placement binding", () => {
+  assert.doesNotMatch(installJs, /placement\.bind/);
+  assert.match(installJs, /developer console/);
   assert.match(installJs, /BX24\.installFinish/);
 });
 
