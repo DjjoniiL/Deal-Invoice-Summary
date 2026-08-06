@@ -38,10 +38,10 @@
           </div>
 
           <div class="field-grid">
-            <label>Выставлено по счетам<select name="issuedField"></select></label>
-            <label>Оплачено по счетам<select name="paidField"></select></label>
-            <label>Не оплачено по счетам<select name="unpaidField"></select></label>
-            <label>Остаток оплаты<select name="remainingField"></select></label>
+            <label>Выставлено по счетам<select name="issuedField" data-field-select></select></label>
+            <label>Оплачено по счетам<select name="paidField" data-field-select></select></label>
+            <label>Не оплачено по счетам<select name="unpaidField" data-field-select></select></label>
+            <label>Остаток оплаты<select name="remainingField" data-field-select></select></label>
           </div>
 
           <label class="check">
@@ -58,14 +58,39 @@
         <section class="panel automation-panel">
           <h2>Автопересчёт</h2>
           <div class="automation-list">
-            <span>Режим</span>
-            <strong id="automationMode">Фоновый polling</strong>
+            <label>Режим расчёта
+              <select id="automationMode">
+                <option value="twiceDaily">Утром и вечером</option>
+                <option value="continuous">Постоянный</option>
+              </select>
+            </label>
+            <label>Окно пересчёта
+              <select name="autoRecalcWindowDays" id="autoRecalcWindowDays" form="settings">
+                <option value="42">42 суток</option>
+                <option value="28">28 суток</option>
+                <option value="21">21 сутки</option>
+                <option value="14">14 суток</option>
+                <option value="7">7 суток</option>
+                <option value="2">2 суток</option>
+              </select>
+            </label>
             <span>Интервал</span>
             <strong id="automationInterval">Проверяю...</strong>
+            <span>Пробуждение</span>
+            <strong id="automationWake">09:44 и 18:44 МСК</strong>
             <span>Отслеживается сделок</span>
             <strong id="automationTracked">Проверяю...</strong>
             <span>Последний запуск</span>
             <strong id="automationLastRun">Пока не запускался</strong>
+          </div>
+          <div id="automationProgress" class="automation-progress" hidden>
+            <div class="automation-progress-head">
+              <span id="automationProgressText">Готовлю пересчёт...</span>
+              <strong id="automationProgressValue">0%</strong>
+            </div>
+            <div class="automation-progress-track">
+              <span id="automationProgressBar"></span>
+            </div>
           </div>
           <button id="recent">Запустить автопересчёт сейчас</button>
         </section>

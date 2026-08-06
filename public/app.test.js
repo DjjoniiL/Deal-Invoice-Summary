@@ -26,6 +26,15 @@ test("left menu page contains setup, CTA, and recalculation controls", () => {
   assert.match(html, /data-pending-openline-url="Bisness i 24"/);
   assert.match(html, /Пересчитать сделку/);
   assert.match(html, /id="automationInterval"/);
+  assert.match(html, /id="autoRecalcWindowDays"/);
+  assert.match(html, /value="42">42 суток/);
+  assert.match(html, /value="21">21 сутки/);
+  assert.match(html, /id="automationWake"/);
+  assert.match(html, /id="automationMode"/);
+  assert.match(html, /Режим расчёта/);
+  assert.match(html, /Утром и вечером/);
+  assert.match(html, /Постоянный/);
+  assert.match(html, /id="automationProgress" class="automation-progress" hidden/);
   assert.match(html, /Запустить автопересчёт сейчас/);
   assert.match(menuCss, /\.menu-hero/);
   assert.match(menuCss, /\.manual-form/);
@@ -54,5 +63,8 @@ test("manual recalculation accepts deal links and keeps the log collapsible", ()
 test("left menu shows polling automation status", () => {
   assert.match(js, /function renderAutomation/);
   assert.match(js, /\/api\/automation\/run/);
-  assert.match(js, /Фоновый polling/);
+  assert.match(js, /automationMode\.value/);
+  assert.match(js, /setAutomationProgress/);
+  assert.match(js, /recentDays/);
+  assert.match(js, /09:44/);
 });

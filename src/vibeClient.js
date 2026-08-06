@@ -67,6 +67,10 @@ export class VibeClient {
     return this.request(path, { method: "POST", body });
   }
 
+  put(path, body) {
+    return this.request(path, { method: "PUT", body });
+  }
+
   patch(path, body) {
     return this.request(path, { method: "PATCH", body });
   }

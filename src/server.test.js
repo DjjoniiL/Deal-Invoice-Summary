@@ -5,9 +5,11 @@ import {
   buildDealReport,
   createApp,
   csvCell,
+  dealFieldToBitrixName,
   fieldOptions,
   invoiceCalculationGroup,
   invoiceStageName,
+  mergeDealSummarySection,
   normalizeDealId,
   parseBitrixForm,
   reportDate,
@@ -54,6 +56,44 @@ test("parses nested Bitrix24 event form payloads", () => {
     data: { FIELDS: { ID: "2" } },
     auth: { application_token: "token", domain: "example.bitrix24.ru" },
   });
+});
+
+test("builds deal card field names and merges summary section", () => {
+  assert.equal(dealFieldToBitrixName("ufCrmInvSumIssued"), "UF_CRM_INV_SUM_ISSUED");
+  assert.equal(dealFieldToBitrixName("ufCrm_1785930142"), "UF_CRM_1785930142");
+
+  const layout = [
+    {
+      name: "main",
+      title: "О сделке",
+      type: "section",
+      elements: [{ name: "TITLE", optionFlags: "0" }, { name: "UF_CRM_INV_SUM_PAID", optionFlags: "0" }],
+    },
+    {
+      name: "deal_invoice_summary",
+      title: "Old",
+      type: "section",
+      elements: [{ name: "UF_CRM_OLD", optionFlags: "0" }],
+    },
+  ];
+
+  assert.deepEqual(mergeDealSummarySection(layout, ["UF_CRM_INV_SUM_PAID", "UF_CRM_INV_SUM_REMAINING"]), [
+    {
+      name: "main",
+      title: "О сделке",
+      type: "section",
+      elements: [{ name: "TITLE", optionFlags: "0" }],
+    },
+    {
+      name: "deal_invoice_summary",
+      title: "Расчёт оплаты счетов",
+      type: "section",
+      elements: [
+        { name: "UF_CRM_INV_SUM_PAID", optionFlags: 0 },
+        { name: "UF_CRM_INV_SUM_REMAINING", optionFlags: 0 },
+      ],
+    },
+  ]);
 });
 
 test("escapes CSV cells and builds Excel-friendly deal report", () => {

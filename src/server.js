@@ -12,9 +12,19 @@ const dataDir = process.env.DATA_DIR || join(root, "data");
 const settingsPath = join(dataDir, "settings.json");
 const watchlistPath = join(dataDir, "watchlist.json");
 const invoiceEntityTypeId = 31;
-const autoRecalcIntervalMs = Math.max(60_000, Number(process.env.AUTO_RECALC_INTERVAL_MS || 300_000));
-const autoRecalcRecentHours = Math.max(1, Number(process.env.AUTO_RECALC_RECENT_HOURS || 7));
+const dealEntityTypeId = 2;
+const dealSummarySectionName = "deal_invoice_summary";
+const dealSummarySectionTitle = "Расчёт оплаты счетов";
+const autoRecalcWindowDaysOptions = [42, 28, 21, 14, 7, 2];
+const defaultAutoRecalcWindowDays = normalizeAutoRecalcWindowDays(
+  process.env.AUTO_RECALC_RECENT_HOURS ? Number(process.env.AUTO_RECALC_RECENT_HOURS) / 24 : 21,
+);
+const autoRecalcIntervalMs = Math.max(60_000, Number(process.env.AUTO_RECALC_INTERVAL_MS || 420_000));
 const autoRecalcEnabled = process.env.AUTO_RECALC_ENABLED !== "false";
+const wakeSchedule = [
+  { cronExpr: "44 9 * * *", timezone: "Europe/Moscow", label: "Morning wake 09:44 MSK" },
+  { cronExpr: "44 18 * * *", timezone: "Europe/Moscow", label: "Evening wake 18:44 MSK" },
+];
 let autoRecalcTimer = null;
 let autoRecalcRunning = false;
 let lastAutoRecalc = null;
@@ -30,11 +40,24 @@ const defaults = {
   paidField: "",
   unpaidField: "",
   remainingField: "",
+  autoRecalcWindowDays: defaultAutoRecalcWindowDays,
 };
+
+function normalizeAutoRecalcWindowDays(value) {
+  const days = Number(value);
+  return autoRecalcWindowDaysOptions.includes(days) ? days : 21;
+}
+
+function normalizeSettings(settings = {}) {
+  const clean = { ...defaults, ...settings };
+  clean.includeNegativeStages = Boolean(clean.includeNegativeStages);
+  clean.autoRecalcWindowDays = normalizeAutoRecalcWindowDays(clean.autoRecalcWindowDays);
+  return clean;
+}
 
 async function readSettings() {
   try {
-    return { ...defaults, ...JSON.parse(await readFile(settingsPath, "utf8")) };
+    return normalizeSettings(JSON.parse(await readFile(settingsPath, "utf8")));
   } catch {
     return { ...defaults };
   }
@@ -42,7 +65,7 @@ async function readSettings() {
 
 async function saveSettings(settings) {
   await mkdir(dataDir, { recursive: true });
-  const clean = { ...defaults, ...settings };
+  const clean = normalizeSettings(settings);
   await writeFile(settingsPath, JSON.stringify(clean, null, 2));
   return clean;
 }
@@ -140,6 +163,55 @@ export function fieldOptions(fields) {
     .filter(([, field]) => !field.readonly && ["money", "number", "double", "integer", "string"].includes(field.type))
     .map(([id, field]) => ({ id, label: field.label || id, type: field.type }))
     .sort((a, b) => a.label.localeCompare(b.label, "ru"));
+}
+
+export function dealFieldToBitrixName(fieldId) {
+  const text = String(fieldId || "").trim();
+  if (!text) return "";
+  if (/^UF_CRM_/i.test(text)) return text.toUpperCase();
+  if (/^ufCrm_/i.test(text)) return `UF_CRM_${text.slice(6).toUpperCase()}`;
+  if (/^ufCrm[A-Z0-9]/.test(text)) {
+    return `UF_CRM_${text
+      .slice(5)
+      .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+      .toUpperCase()}`;
+  }
+  return text.toUpperCase();
+}
+
+function configuredDealFieldNames(settings) {
+  return [
+    settings.issuedField,
+    settings.paidField,
+    settings.unpaidField,
+    settings.remainingField,
+  ]
+    .map(dealFieldToBitrixName)
+    .filter(Boolean);
+}
+
+export function mergeDealSummarySection(layout, fieldNames) {
+  if (!Array.isArray(layout)) return null;
+
+  const uniqueFieldNames = [...new Set(fieldNames.filter(Boolean))];
+  if (!uniqueFieldNames.length) return layout;
+
+  const targetNames = new Set(uniqueFieldNames);
+  const cleanedSections = layout
+    .filter((section) => section?.name !== dealSummarySectionName)
+    .map((section) => ({
+      ...section,
+      elements: (section.elements || []).filter((element) => !targetNames.has(String(element.name || "").toUpperCase())),
+    }));
+
+  cleanedSections.push({
+    name: dealSummarySectionName,
+    title: dealSummarySectionTitle,
+    type: "section",
+    elements: uniqueFieldNames.map((name) => ({ name, optionFlags: 0 })),
+  });
+
+  return cleanedSections;
 }
 
 export function normalizeDealId(value) {
@@ -300,7 +372,7 @@ async function recalculateDeal(dealId, settings = null, statuses = null) {
   return result;
 }
 
-async function recalculateRecent(hours = autoRecalcRecentHours) {
+async function recalculateRecent(hours = defaultAutoRecalcWindowDays * 24) {
   const settings = await readSettings();
   const statuses = await getInvoiceStatuses();
   const { since, dealIds } = await recentInvoiceDealIds(hours);
@@ -316,11 +388,12 @@ async function recalculateRecent(hours = autoRecalcRecentHours) {
   return { since, recentHours: hours, dealCount: dealIds.length, results };
 }
 
-async function recalculateWatchedAndRecent(hours = autoRecalcRecentHours) {
+async function recalculateWatchedAndRecent(hours) {
   const settings = await readSettings();
   const statuses = await getInvoiceStatuses();
   const watchlist = await readWatchlist();
-  const recent = await recentInvoiceDealIds(hours);
+  const windowHours = Number(hours) || settings.autoRecalcWindowDays * 24;
+  const recent = await recentInvoiceDealIds(windowHours);
   const dealIds = [...new Set([...watchlist.dealIds, ...recent.dealIds])];
   const results = [];
 
@@ -334,6 +407,8 @@ async function recalculateWatchedAndRecent(hours = autoRecalcRecentHours) {
 
   return {
     since: recent.since,
+    recentHours: windowHours,
+    recentDays: settings.autoRecalcWindowDays,
     trackedDealCount: watchlist.dealIds.length,
     recentDealCount: recent.dealIds.length,
     dealCount: dealIds.length,
@@ -349,7 +424,7 @@ async function runAutoRecalculation(trigger = "timer") {
   autoRecalcRunning = true;
   const startedAt = new Date().toISOString();
   try {
-    const result = await recalculateWatchedAndRecent(autoRecalcRecentHours);
+    const result = await recalculateWatchedAndRecent();
     lastAutoRecalc = { ok: true, trigger, startedAt, finishedAt: new Date().toISOString(), ...result };
     return lastAutoRecalc;
   } catch (error) {
@@ -360,11 +435,15 @@ async function runAutoRecalculation(trigger = "timer") {
   }
 }
 
-function automationStatus() {
+function automationStatus(settings = defaults) {
+  const recentDays = normalizeAutoRecalcWindowDays(settings.autoRecalcWindowDays);
   return {
     enabled: autoRecalcEnabled,
     intervalMs: autoRecalcIntervalMs,
-    recentHours: autoRecalcRecentHours,
+    recentDays,
+    recentHours: recentDays * 24,
+    windowDayOptions: autoRecalcWindowDaysOptions,
+    wakeSchedule,
     running: autoRecalcRunning,
     lastRun: lastAutoRecalc,
   };
@@ -455,6 +534,66 @@ async function ensureFields() {
   return { created, settings };
 }
 
+async function restrictDealFieldsInList(fieldNames) {
+  const wanted = new Set(fieldNames.map((name) => name.toUpperCase()));
+  if (!wanted.size) return [];
+
+  const current = await client.get("/v1/userfields/deals");
+  const fields = current.data || [];
+  const results = [];
+
+  for (const field of fields) {
+    const fieldName = String(field.FIELD_NAME || field.fieldName || "").toUpperCase();
+    const fieldId = Number(field.ID || field.id);
+    if (!wanted.has(fieldName) || !fieldId) continue;
+
+    try {
+      await client.patch(`/v1/userfields/deals/${encodeURIComponent(fieldId)}`, { editInList: "N" });
+      results.push({ fieldName, fieldId, editInList: "N", updated: true });
+    } catch (error) {
+      results.push({ fieldName, fieldId, editInList: "N", updated: false, error: error.message });
+    }
+  }
+
+  return results;
+}
+
+async function ensureDealCardSection(settings) {
+  const fieldNames = configuredDealFieldNames(settings);
+  if (fieldNames.length < 4) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: "Field mapping is incomplete",
+      fieldNames,
+    };
+  }
+
+  const current = await client.get(`/v1/crm/card-config/${dealEntityTypeId}?scope=C`);
+  if (current.data === null) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: "Common deal card layout is not explicitly configured; refusing to replace the default layout",
+      fieldNames,
+    };
+  }
+
+  const data = mergeDealSummarySection(current.data, fieldNames);
+  await client.put(`/v1/crm/card-config/${dealEntityTypeId}`, { scope: "C", data });
+  const fieldRestrictions = await restrictDealFieldsInList(fieldNames);
+
+  return {
+    ok: true,
+    sectionName: dealSummarySectionName,
+    sectionTitle: dealSummarySectionTitle,
+    fieldNames,
+    fieldRestrictions,
+    editRestrictionNote:
+      "VibeCode userfields API supports editInList only; card-level role-based readonly for non-admin users is not exposed by this API.",
+  };
+}
+
 async function routeApi(req, res, pathname) {
   if (pathname === "/api/health") return sendJson(res, 200, { ok: true });
 
@@ -470,16 +609,29 @@ async function routeApi(req, res, pathname) {
       fields: fieldOptions(fields.data.fields),
       portal: me.data.portal,
       accessMode: me.data.accessMode,
-      automation: { ...automationStatus(), trackedDealCount: watchlist.dealIds.length },
+      automation: { ...automationStatus(settings), trackedDealCount: watchlist.dealIds.length },
     });
   }
 
   if (pathname === "/api/settings" && req.method === "POST") {
-    return sendJson(res, 200, { settings: await saveSettings(await readJson(req)) });
+    const settings = await saveSettings(await readJson(req));
+    let dealCard = null;
+    try {
+      dealCard = await ensureDealCardSection(settings);
+    } catch (error) {
+      dealCard = { ok: false, error: error.message };
+    }
+    return sendJson(res, 200, { settings, dealCard });
   }
 
   if (pathname === "/api/fields/ensure" && req.method === "POST") {
-    return sendJson(res, 200, await ensureFields());
+    const result = await ensureFields();
+    try {
+      result.dealCard = await ensureDealCardSection(result.settings);
+    } catch (error) {
+      result.dealCard = { ok: false, error: error.message };
+    }
+    return sendJson(res, 200, result);
   }
 
   if (pathname === "/api/recalculate/deal" && req.method === "POST") {
@@ -505,19 +657,21 @@ async function routeApi(req, res, pathname) {
 
   if (pathname === "/api/recalculate/recent" && req.method === "POST") {
     const body = await readJson(req);
-    const hours = Number(body.hours) || (body.days ? Number(body.days) * 24 : autoRecalcRecentHours);
+    const settings = await readSettings();
+    const days = body.days ? normalizeAutoRecalcWindowDays(body.days) : settings.autoRecalcWindowDays;
+    const hours = Number(body.hours) || days * 24;
     return sendJson(res, 200, await recalculateRecent(hours));
   }
 
   if (pathname === "/api/automation/status" && req.method === "GET") {
-    const watchlist = await readWatchlist();
-    return sendJson(res, 200, { ...automationStatus(), trackedDealIds: watchlist.dealIds });
+    const [settings, watchlist] = await Promise.all([readSettings(), readWatchlist()]);
+    return sendJson(res, 200, { ...automationStatus(settings), trackedDealIds: watchlist.dealIds });
   }
 
   if (pathname === "/api/automation/run" && req.method === "POST") {
     await runAutoRecalculation("manual");
-    const watchlist = await readWatchlist();
-    return sendJson(res, 200, { ...automationStatus(), trackedDealCount: watchlist.dealIds.length });
+    const [settings, watchlist] = await Promise.all([readSettings(), readWatchlist()]);
+    return sendJson(res, 200, { ...automationStatus(settings), trackedDealCount: watchlist.dealIds.length });
   }
 
   if (pathname === "/api/events/bitrix24" && req.method === "POST") {

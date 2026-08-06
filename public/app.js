@@ -8,8 +8,14 @@ const dealUrlInput = dealForm.elements.dealUrl;
 const logToggle = document.querySelector("#logToggle");
 const automationMode = document.querySelector("#automationMode");
 const automationInterval = document.querySelector("#automationInterval");
+const automationWake = document.querySelector("#automationWake");
 const automationTracked = document.querySelector("#automationTracked");
 const automationLastRun = document.querySelector("#automationLastRun");
+const autoRecalcWindowDays = document.querySelector("#autoRecalcWindowDays");
+const automationProgress = document.querySelector("#automationProgress");
+const automationProgressText = document.querySelector("#automationProgressText");
+const automationProgressValue = document.querySelector("#automationProgressValue");
+const automationProgressBar = document.querySelector("#automationProgressBar");
 
 const recalculationStatusMinMs = 1500;
 let portalHost = "";
@@ -29,8 +35,19 @@ function setMappingStatus(text, tone = "neutral") {
   mappingStatus.dataset.tone = tone;
 }
 
+function cardStatusText(dealCard) {
+  if (!dealCard) return "";
+  if (dealCard.ok) return " Раздел в карточке сделки обновлён.";
+  if (dealCard.skipped) return " Раздел карточки не обновлён: нет явной общей раскладки.";
+  return " Раздел карточки не обновлён.";
+}
+
 function minutes(ms) {
   return Math.round(ms / 60000);
+}
+
+function days(value) {
+  return Number(value || 21);
 }
 
 function formatLastRun(run) {
@@ -40,11 +57,23 @@ function formatLastRun(run) {
   return `${status}${time ? ` · ${time}` : ""}`;
 }
 
+function setAutomationProgress(text, percent, { visible = true, tone = "active" } = {}) {
+  automationProgress.hidden = !visible;
+  automationProgress.dataset.tone = tone;
+  automationProgressText.textContent = text;
+  automationProgressValue.textContent = `${percent}%`;
+  automationProgressBar.style.width = `${percent}%`;
+}
+
 function renderAutomation(automation = {}) {
-  automationMode.textContent = automation.enabled ? "Фоновый polling" : "Выключен";
+  automationMode.value = automation.enabled ? "twiceDaily" : "twiceDaily";
   automationInterval.textContent = automation.enabled
-    ? `каждые ${minutes(automation.intervalMs)} мин., окно ${automation.recentHours || 7} ч.`
+    ? `каждые ${minutes(automation.intervalMs)} мин., окно ${days(automation.recentDays)} сут.`
     : "не запущен";
+  automationWake.textContent = (automation.wakeSchedule || [])
+    .map((schedule) => schedule.cronExpr === "44 9 * * *" ? "09:44" : schedule.cronExpr === "44 18 * * *" ? "18:44" : schedule.label)
+    .filter(Boolean)
+    .join(" и ") || "не настроено";
   automationTracked.textContent = String(automation.trackedDealCount ?? automation.trackedDealIds?.length ?? 0);
   automationLastRun.textContent = formatLastRun(automation.lastRun);
 }
@@ -107,10 +136,11 @@ async function load() {
   portalHost = data.portal || "";
   portal.textContent = `${data.portal} · ${data.accessMode}`;
   renderAutomation(data.automation);
-  for (const select of form.querySelectorAll("select")) {
+  for (const select of form.querySelectorAll("select[data-field-select]")) {
     fillSelect(select, data.fields, data.settings[select.name]);
   }
   form.includeNegativeStages.checked = Boolean(data.settings.includeNegativeStages);
+  autoRecalcWindowDays.value = String(data.settings.autoRecalcWindowDays || data.automation?.recentDays || 21);
   setMappingStatus(
     mappingIsComplete(data.settings) ? "Сопоставление готово" : "Выберите поля или создайте автоматически",
     mappingIsComplete(data.settings) ? "success" : "warning",
@@ -149,9 +179,10 @@ form.addEventListener("submit", async (event) => {
   try {
     const settings = Object.fromEntries(new FormData(form));
     settings.includeNegativeStages = form.includeNegativeStages.checked;
+    settings.autoRecalcWindowDays = Number(settings.autoRecalcWindowDays);
     const response = await api("/api/settings", { method: "POST", body: JSON.stringify(settings) });
     setMappingStatus(
-      mappingIsComplete(response.settings) ? "Сопоставление сохранено" : "Часть полей не выбрана",
+      `${mappingIsComplete(response.settings) ? "Сопоставление сохранено" : "Часть полей не выбрана"}${cardStatusText(response.dealCard)}`,
       mappingIsComplete(response.settings) ? "success" : "warning",
     );
     write(response);
@@ -200,11 +231,18 @@ dealForm.addEventListener("submit", async (event) => {
 
 document.querySelector("#recent").addEventListener("click", async () => {
   try {
-    write("Запускаю автопересчёт...", { reveal: true });
+    setAutomationProgress("Запускаю автопересчёт...", 18);
+    write("Запускаю автопересчёт...");
+    await delay(250);
+    setAutomationProgress("Собираю сделки и свежие счета...", 42);
     const response = await api("/api/automation/run", { method: "POST", body: "{}" });
+    setAutomationProgress("Записываю итоги и обновляю статус...", 78);
+    await delay(250);
     renderAutomation(response);
-    write(response, { reveal: true });
+    setAutomationProgress("Автопересчёт завершён", 100, { tone: "success" });
+    write(response);
   } catch (error) {
+    setAutomationProgress("Ошибка автопересчёта", 100, { tone: "warning" });
     write(`Ошибка автопересчёта: ${error.message}`, { reveal: true });
   }
 });
