@@ -162,12 +162,12 @@ function configuredDealFieldNames(settings) {
 }
 
 function mergeDealSummarySection(layout, fieldNames) {
-  if (!Array.isArray(layout)) return null;
+  const sections = Array.isArray(layout) && layout.length ? layout : defaultDealCardLayout();
   const uniqueFieldNames = [...new Set(fieldNames.filter(Boolean))];
-  if (!uniqueFieldNames.length) return layout;
+  if (!uniqueFieldNames.length) return sections;
 
   const targetNames = new Set(uniqueFieldNames);
-  const cleanedSections = layout
+  const cleanedSections = sections
     .filter((section) => section?.name !== dealSummarySectionName)
     .map((section) => ({
       ...section,
@@ -182,6 +182,41 @@ function mergeDealSummarySection(layout, fieldNames) {
   });
 
   return cleanedSections;
+}
+
+function defaultDealCardLayout() {
+  return [
+    {
+      name: "main",
+      title: "О сделке",
+      type: "section",
+      elements: [
+        { name: "TITLE", optionFlags: 1 },
+        { name: "OPPORTUNITY_WITH_CURRENCY", optionFlags: 0 },
+        { name: "STAGE_ID", optionFlags: 0 },
+        { name: "CLOSEDATE", optionFlags: 0 },
+        { name: "CLIENT", optionFlags: 0 },
+      ],
+    },
+    {
+      name: "additional",
+      title: "Дополнительно",
+      type: "section",
+      elements: [
+        { name: "TYPE_ID", optionFlags: 0 },
+        { name: "SOURCE_ID", optionFlags: 0 },
+        { name: "OPENED", optionFlags: 0 },
+        { name: "ASSIGNED_BY_ID", optionFlags: 0 },
+        { name: "COMMENTS", optionFlags: 0 },
+      ],
+    },
+    {
+      name: "products",
+      title: "Товары",
+      type: "section",
+      elements: [{ name: "PRODUCT_ROW_SUMMARY", optionFlags: 0 }],
+    },
+  ];
 }
 
 async function configureDealCardSection(settings) {
@@ -200,11 +235,6 @@ async function configureDealCardSection(settings) {
         const response = await callMethod(method.get, { ...method.baseParams, scope });
         const current = response?.data || response;
         const data = mergeDealSummarySection(current, fieldNames);
-        if (!data) {
-          attempts.push({ method: method.get, scope, ok: false, error: "Card layout is empty" });
-          continue;
-        }
-
         await callMethod(method.set, { ...method.baseParams, scope, data });
         return { ok: true, method: method.set, scope, sectionName: dealSummarySectionName, fieldNames };
       } catch (error) {

@@ -153,7 +153,7 @@ npm test
 
 После каждого крупного изменения Marketplace-версии собирать новый архив только для безсерверной версии с номером версии или commit short SHA в имени. Серверные архивы больше не создавать. Безымянный `Калькулятор счетов Marketplace.zip` не обновлять; архивы, которые уже отдавались на проверку или загружались на портал, не перезаписывать.
 
-Для Marketplace zip `install.js` не должен вызывать `placement.bind`: install token может вернуть `The request requires higher privileges than provided by the access token`. Левое меню и вкладка карточки сделки настраиваются в developer console в карточке приложения/версии.
+Для Marketplace zip `install.js` может вызывать `placement.bind` только для `LEFT_MENU`. `CRM_DEAL_DETAIL_TAB` через install token возвращал `The request requires higher privileges than provided by the access token`, поэтому вкладку карточки сделки настраивать в developer console в карточке приложения/версии.
 
 После изменений:
 

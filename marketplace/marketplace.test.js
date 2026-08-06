@@ -26,9 +26,10 @@ test("marketplace runtime package stays serverless", () => {
   assert.deepEqual(runtimeFiles.sort(), ["app.js", "index.html", "install.css", "install.html", "install.js", "style.css"]);
 });
 
-test("marketplace installer completes install without server-side placement binding", () => {
-  assert.doesNotMatch(installJs, /placement\.bind/);
-  assert.match(installJs, /developer console/);
+test("marketplace installer binds only the left menu and completes install", () => {
+  assert.match(installJs, /placement\.bind/);
+  assert.match(installJs, /LEFT_MENU/);
+  assert.doesNotMatch(installJs, /CRM_DEAL_DETAIL_TAB/);
   assert.match(installJs, /BX24\.installFinish/);
 });
 
@@ -43,6 +44,7 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
   assert.match(appJs, /crm\.item\.details\.configuration\.get/);
   assert.match(appJs, /crm\.item\.details\.configuration\.set/);
   assert.match(appJs, /deal_invoice_summary/);
+  assert.match(appJs, /function defaultDealCardLayout/);
   assert.match(appJs, /defaultFieldLabels/);
   assert.match(appJs, /if \(defaultLabel\) return defaultLabel/);
   assert.match(appJs, /\^ufCrm\[A-Z0-9\]/);
