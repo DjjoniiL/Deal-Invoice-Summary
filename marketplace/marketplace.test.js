@@ -26,6 +26,7 @@ test("marketplace runtime package stays serverless", () => {
 
 test("marketplace installer completes install and binds the deal tab", () => {
   assert.match(installJs, /placement\.bind/);
+  assert.match(installJs, /LEFT_MENU/);
   assert.match(installJs, /CRM_DEAL_DETAIL_TAB/);
   assert.match(installJs, /BX24\.installFinish/);
 });

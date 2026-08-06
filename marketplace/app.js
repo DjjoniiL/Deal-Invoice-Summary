@@ -8,9 +8,14 @@ const defaultSettings = {
 
 const moneyFormat = new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 });
 const form = document.querySelector("#settings");
-const settingsStatus = document.querySelector("#settingsStatus");
+const portal = document.querySelector("#portal");
+const mappingStatus = document.querySelector("#mappingStatus");
 const dealForm = document.querySelector("#dealForm");
-const dealStatus = document.querySelector("#dealStatus");
+const dealIdInput = dealForm.elements.dealId;
+const dealUrlInput = dealForm.elements.dealUrl;
+const logToggle = document.querySelector("#logToggle");
+const resultNode = document.querySelector("#result");
+const reportNode = document.querySelector(".marketplace-report");
 const dealTitle = document.querySelector("#dealTitle");
 const invoiceList = document.querySelector("#invoiceList");
 const totalNodes = {
@@ -20,6 +25,22 @@ const totalNodes = {
   remaining: document.querySelector("#remaining"),
 };
 let currentReport = null;
+let portalHost = "";
+
+function setLogVisible(visible) {
+  resultNode.hidden = !visible;
+  logToggle.setAttribute("aria-expanded", String(visible));
+}
+
+function write(value, { reveal = false } = {}) {
+  resultNode.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  if (reveal) setLogVisible(true);
+}
+
+function setMappingStatus(text, tone = "neutral") {
+  mappingStatus.textContent = text;
+  mappingStatus.dataset.tone = tone;
+}
 
 function callMethod(method, params = {}) {
   return new Promise((resolve, reject) => {
@@ -107,11 +128,16 @@ function normalizeFieldName(value) {
 
 function renderFields(fields, settings) {
   const available = Object.entries(fields)
-    .filter(([, field]) => ["double", "integer", "money", "string"].includes(field.type || field.TYPE))
-    .map(([id, field]) => ({ id, label: field.title || field.formLabel || field.FORM_LABEL || id }));
+    .filter(([, field]) => ["double", "integer", "money", "string"].includes(field.type || field.TYPE || field.USER_TYPE_ID))
+    .map(([id, field]) => ({
+      id,
+      type: field.type || field.TYPE || field.USER_TYPE_ID || "",
+      label: field.title || field.formLabel || field.FORM_LABEL || field.EDIT_FORM_LABEL || field.LIST_COLUMN_LABEL || id,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label, "ru"));
   for (const select of form.querySelectorAll("select")) {
     select.replaceChildren(new Option("Не записывать", ""));
-    for (const field of available) select.add(new Option(field.label, normalizeFieldName(field.id)));
+    for (const field of available) select.add(new Option(`${field.label} (${field.type})`, normalizeFieldName(field.id)));
     select.value = normalizeFieldName(settings[select.name]);
   }
 }
@@ -161,6 +187,18 @@ function dealIdFromContext() {
   }
 }
 
+function dealIdFromText(value) {
+  const text = String(value || "").trim();
+  const dealMatch = text.match(/\/crm\/deal\/details\/(\d+)\b/i);
+  const idMatch = dealMatch || text.match(/\bdeal[_/-]?(\d+)\b/i) || text.match(/\b(\d+)\b/);
+  return idMatch ? idMatch[1] : "";
+}
+
+function dealUrlFromId(dealId) {
+  const id = dealIdFromText(dealId);
+  return id && portalHost ? `https://${portalHost}/crm/deal/details/${id}/` : "";
+}
+
 async function recalculate(dealId, write = true) {
   const settings = await loadSettings();
   const [deal, invoices] = await Promise.all([
@@ -184,6 +222,7 @@ async function recalculate(dealId, write = true) {
 }
 
 function renderResult(dealId, result) {
+  reportNode.hidden = false;
   dealTitle.textContent = `Сделка #${dealId}: ${result.deal.TITLE || "без названия"}`;
   for (const [key, node] of Object.entries(totalNodes)) node.textContent = moneyFormat.format(result.summary[key]);
   invoiceList.replaceChildren();
@@ -191,7 +230,9 @@ function renderResult(dealId, result) {
     const row = document.createElement("div");
     row.className = "invoice-row";
     const title = document.createElement("a");
-    title.href = `/crm/type/31/details/${invoice.id}/`;
+    title.href = portalHost ? `https://${portalHost}/crm/type/31/details/${invoice.id}/` : `/crm/type/31/details/${invoice.id}/`;
+    title.target = "_blank";
+    title.rel = "noopener";
     title.textContent = invoice.accountNumber ? `Счёт № ${invoice.accountNumber}` : invoice.title || `Счёт #${invoice.id}`;
     const stage = document.createElement("span");
     stage.textContent = invoice.stageId || "Без стадии";
@@ -225,17 +266,24 @@ function downloadReport() {
 }
 
 async function initApp() {
+  write("Загружаю настройки...");
+  setMappingStatus("Проверяю настройки...");
+  portalHost = window.BX24?.getDomain?.() || "";
+  portal.textContent = portalHost ? `${portalHost} · Bitrix24 Marketplace` : "Bitrix24 Marketplace";
   const settings = await loadSettings();
   const fields = await callMethod("crm.deal.fields");
   renderFields(fields, settings);
   form.includeNegativeStages.checked = Boolean(settings.includeNegativeStages);
-  settingsStatus.textContent = "Сопоставление готово.";
+  setMappingStatus("Сопоставление готово.", "success");
+  write("Настройки загружены.");
   const contextDealId = dealIdFromContext();
   if (contextDealId) {
-    dealForm.elements.dealId.value = contextDealId;
+    dealIdInput.value = contextDealId;
+    const url = dealUrlFromId(contextDealId);
+    if (url) dealUrlInput.value = url;
     const result = await recalculate(contextDealId, false);
     renderResult(contextDealId, result);
-    dealStatus.textContent = "Расчёт готов.";
+    write("Расчёт готов.");
   }
 }
 
@@ -244,27 +292,48 @@ form.addEventListener("submit", async (event) => {
   const settings = Object.fromEntries(new FormData(form));
   settings.includeNegativeStages = form.includeNegativeStages.checked;
   await saveSettings(settings);
-  settingsStatus.textContent = "Сопоставление сохранено.";
+  setMappingStatus("Сопоставление сохранено.", "success");
+  write({ settings });
 });
 
 dealForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const dealId = Number(new FormData(dealForm).get("dealId"));
+  const data = new FormData(dealForm);
+  const dealId = Number(dealIdFromText(data.get("dealId")) || dealIdFromText(data.get("dealUrl")));
   if (!dealId) return;
-  dealStatus.textContent = "Пересчитываю...";
+  dealIdInput.value = dealId;
+  const url = dealUrlFromId(dealId);
+  if (url) dealUrlInput.value = url;
+  write(`Пересчитываю сделку #${dealId}...`, { reveal: true });
   const result = await recalculate(dealId, true);
   renderResult(dealId, result);
-  dealStatus.textContent = "Поля сделки обновлены.";
+  write({ ok: true, message: "Поля сделки обновлены.", summary: result.summary }, { reveal: true });
 });
 
 document.querySelector("#ensureFields").addEventListener("click", async () => {
-  settingsStatus.textContent = "Создаю поля...";
+  setMappingStatus("Создаю стандартные поля...");
   await ensureFields();
   await initApp();
 });
 
 document.querySelector("#refresh").addEventListener("click", initApp);
 document.querySelector("#downloadReport").addEventListener("click", downloadReport);
+logToggle.addEventListener("click", () => setLogVisible(resultNode.hidden));
+dealUrlInput.addEventListener("input", () => {
+  const dealId = dealIdFromText(dealUrlInput.value);
+  if (dealId) dealIdInput.value = dealId;
+});
+dealIdInput.addEventListener("input", () => {
+  const url = dealUrlFromId(dealIdInput.value);
+  if (url) dealUrlInput.value = url;
+});
 
-if (window.BX24) BX24.init(() => initApp().catch((error) => { dealStatus.textContent = error.message; }));
-else dealStatus.textContent = "Откройте приложение внутри Bitrix24.";
+if (window.BX24) {
+  BX24.init(() => initApp().catch((error) => {
+    setMappingStatus("Ошибка загрузки", "warning");
+    write(error.message, { reveal: true });
+  }));
+} else {
+  portal.textContent = "Откройте приложение внутри Bitrix24.";
+  write("Откройте приложение внутри Bitrix24.", { reveal: true });
+}

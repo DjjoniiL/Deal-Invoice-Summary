@@ -8,57 +8,104 @@
     <script src="//api.bitrix24.com/api/v1/"></script>
   </head>
   <body>
-    <main class="app-shell">
-      <section class="topbar">
+    <main class="shell menu-shell">
+      <section class="menu-hero">
         <div>
-          <p>Deal Invoice Summary</p>
-          <h1>Калькулятор счетов</h1>
+          <span class="menu-eyebrow">Deal Invoice Summary</span>
+          <h1>Расчёт оплаты счетов</h1>
+          <p id="portal">Подключение к порталу...</p>
         </div>
-        <button id="refresh" type="button">Обновить</button>
+        <button id="refresh" class="icon-button" title="Обновить" type="button">↻</button>
       </section>
 
-      <section class="grid">
-        <form id="settings" class="panel">
-          <h2>Сопоставление полей сделки</h2>
-          <div class="field-grid">
-            <label>Выставлено<select name="issuedField"></select></label>
-            <label>Оплачено<select name="paidField"></select></label>
-            <label>Не оплачено<select name="unpaidField"></select></label>
-            <label>Остаток<select name="remainingField"></select></label>
+      <section class="notice-panel">
+        <div>
+          <strong>Нужна доработка этого приложения или разработка нового?</strong>
+          <p>Опишите задачу: добавим отчёты, автоматизацию, виджеты открытых линий и интеграции под ваши процессы Bitrix24.</p>
+        </div>
+        <span class="notice-action" data-pending-openline-url="Bisness i 24">Обратиться</span>
+      </section>
+
+      <section class="setup-grid">
+        <form id="settings" class="panel setup-panel">
+          <div class="panel-title">
+            <div>
+              <h2>Сопоставление полей сделки</h2>
+              <p>Выберите поля типа строка или число. Остальные типы не используются в расчёте.</p>
+            </div>
+            <button type="button" id="ensureFields">Создать автоматически</button>
           </div>
+
+          <div class="field-grid">
+            <label>Выставлено по счетам<select name="issuedField"></select></label>
+            <label>Оплачено по счетам<select name="paidField"></select></label>
+            <label>Не оплачено по счетам<select name="unpaidField"></select></label>
+            <label>Остаток оплаты<select name="remainingField"></select></label>
+          </div>
+
           <label class="check">
             <input type="checkbox" name="includeNegativeStages">
-            Учитывать отрицательные стадии счетов
+            Учитывать отрицательные стадии счетов как неоплаченные
           </label>
-          <div class="actions">
-            <button type="button" id="ensureFields">Создать поля</button>
-            <button type="submit">Сохранить</button>
+
+          <div class="form-actions">
+            <button type="submit">Сохранить сопоставление</button>
+            <span id="mappingStatus">Проверяю настройки...</span>
           </div>
-          <p id="settingsStatus">Загружаю настройки...</p>
         </form>
 
-        <section class="panel">
-          <h2>Ручная проверка</h2>
-          <form id="dealForm" class="manual-form">
-            <label>ID сделки<input name="dealId" inputmode="numeric" placeholder="2"></label>
-            <button>Пересчитать</button>
-          </form>
-          <div class="totals">
-            <span>Выставлено<strong id="issued">0</strong></span>
-            <span>Оплачено<strong id="paid">0</strong></span>
-            <span>Не оплачено<strong id="unpaid">0</strong></span>
-            <span>Остаток<strong id="remaining">0</strong></span>
+        <section class="panel automation-panel">
+          <h2>Автопересчёт</h2>
+          <div class="automation-list">
+            <label>Режим расчёта
+              <select id="automationMode" disabled>
+                <option value="manual">Ручной режим</option>
+              </select>
+            </label>
+            <label>Окно пересчёта
+              <select id="autoRecalcWindowDays" disabled>
+                <option>При открытии</option>
+              </select>
+            </label>
+            <span>Интервал</span>
+            <strong id="automationInterval">сервер не используется</strong>
+            <span>Пробуждение</span>
+            <strong id="automationWake">не требуется</strong>
+            <span>Отслеживается сделок</span>
+            <strong id="automationTracked">0</strong>
+            <span>Последний запуск</span>
+            <strong id="automationLastRun">Пока не запускался</strong>
           </div>
-          <p id="dealStatus">Ожидаю сделку.</p>
+          <button id="recent" type="button" disabled>Автопересчёт доступен в серверной версии</button>
         </section>
       </section>
 
       <section class="panel">
         <div class="panel-head">
-          <h2 id="dealTitle">Счета сделки</h2>
-          <button id="downloadReport" type="button">Скачать отчёт</button>
+          <div>
+            <h2>Ручная проверка</h2>
+            <button type="button" id="logToggle" class="log-toggle" aria-expanded="false">Журнал логирования</button>
+          </div>
         </div>
-        <div id="invoiceList" class="invoice-list"></div>
+        <form id="dealForm" class="manual-form">
+          <label>ID сделки<input name="dealId" inputmode="numeric" placeholder="2"></label>
+          <label>Ссылка на сделку<input name="dealUrl" inputmode="url" placeholder="https://portal.bitrix24.ru/crm/deal/details/2/"></label>
+          <button>Пересчитать сделку</button>
+        </form>
+        <pre id="result" hidden>Готово к работе.</pre>
+        <div class="marketplace-report" hidden>
+          <div class="metric-grid">
+            <article class="metric issued"><span>Выставлено</span><strong id="issued">0</strong></article>
+            <article class="metric paid"><span>Оплачено</span><strong id="paid">0</strong></article>
+            <article class="metric unpaid"><span>Не оплачено</span><strong id="unpaid">0</strong></article>
+            <article class="metric remaining"><span>Остаток</span><strong id="remaining">0</strong></article>
+          </div>
+          <div class="marketplace-report-head">
+            <h2 id="dealTitle">Счета сделки</h2>
+            <button id="downloadReport" type="button">Скачать отчёт</button>
+          </div>
+          <div id="invoiceList" class="invoice-list"></div>
+        </div>
       </section>
     </main>
     <script src="app.js"></script>
