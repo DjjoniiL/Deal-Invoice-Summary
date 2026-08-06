@@ -7,6 +7,12 @@ const defaultSettings = {
 };
 const dealSummarySectionName = "deal_invoice_summary";
 const dealSummarySectionTitle = "Расчёт оплаты счетов";
+const defaultFieldLabels = new Map([
+  ["UF_CRM_INV_SUM_ISSUED", "Сумма выставленных счетов"],
+  ["UF_CRM_INV_SUM_PAID", "Сумма оплаченных счетов"],
+  ["UF_CRM_INV_SUM_UNPAID", "Сумма неоплаченных счетов"],
+  ["UF_CRM_INV_SUM_REMAINING", "Остаток оплаты по счетам"],
+]);
 
 const moneyFormat = new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 });
 const form = document.querySelector("#settings");
@@ -180,23 +186,27 @@ async function configureDealCardSection(settings) {
 
 function fieldLabel(field, userFieldLabels) {
   const id = String(field.FIELD_NAME || field.fieldName || "");
+  const normalizedId = id.toUpperCase();
+  const restLabel = field.title || field.formLabel || field.FORM_LABEL || field.EDIT_FORM_LABEL || field.LIST_COLUMN_LABEL;
+  if (!restLabel || String(restLabel).toUpperCase() === normalizedId) {
+    return userFieldLabels.get(normalizedId) || defaultFieldLabels.get(normalizedId) || id;
+  }
   return (
-    userFieldLabels.get(id.toUpperCase()) ||
-    field.title ||
-    field.formLabel ||
-    field.FORM_LABEL ||
-    field.EDIT_FORM_LABEL ||
-    field.LIST_COLUMN_LABEL ||
+    defaultFieldLabels.get(normalizedId) ||
+    userFieldLabels.get(normalizedId) ||
+    restLabel ||
     id
   );
 }
 
 function renderFields(fields, userFields, settings) {
   const userFieldLabels = new Map(
-    userFields.map((field) => [
-      String(field.FIELD_NAME || "").toUpperCase(),
-      field.EDIT_FORM_LABEL || field.LIST_COLUMN_LABEL || field.LIST_FILTER_LABEL || field.FIELD_NAME,
-    ]),
+    userFields
+      .map((field) => [
+        String(field.FIELD_NAME || "").toUpperCase(),
+        field.EDIT_FORM_LABEL || field.LIST_COLUMN_LABEL || field.LIST_FILTER_LABEL || defaultFieldLabels.get(String(field.FIELD_NAME || "").toUpperCase()) || field.FIELD_NAME,
+      ])
+      .filter(([fieldName]) => fieldName),
   );
   const available = Object.entries(fields)
     .filter(([, field]) => ["double", "integer", "money", "string"].includes(field.type || field.TYPE || field.USER_TYPE_ID))

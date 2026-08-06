@@ -4,10 +4,6 @@ const logNode = document.querySelector("#log");
 
 const placements = [
   {
-    PLACEMENT: "LEFT_MENU",
-    TITLE: "Расчёт оплаты счетов",
-  },
-  {
     PLACEMENT: "CRM_DEAL_DETAIL_TAB",
     TITLE: "Расчёт оплаты счетов",
   },
@@ -37,7 +33,7 @@ function writeLog(value) {
 
 async function finishInstall() {
   installButton.disabled = true;
-  statusNode.textContent = "Регистрирую приложение в левом меню и карточке сделки...";
+  statusNode.textContent = "Регистрирую вкладку в карточке сделки...";
   const handler = appUrl("index.html");
   const results = [];
 
