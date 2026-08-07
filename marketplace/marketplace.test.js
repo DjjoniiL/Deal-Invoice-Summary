@@ -14,8 +14,8 @@ test("marketplace archive has static Bitrix24 entry files", () => {
   assert.match(installHtml, /install\.js/);
   assert.match(indexHtml, /style\.css/);
   assert.match(indexHtml, /app\.js/);
-  assert.match(indexHtml, /app\.js\?v=layout-20260806-2/);
-  assert.match(indexHtml, /style\.css\?v=layout-20260806-2/);
+  assert.match(indexHtml, /app\.js\?v=layout-20260807-1/);
+  assert.match(indexHtml, /style\.css\?v=layout-20260807-1/);
   assert.match(installHtml, /api\.bitrix24\.com\/api\/v1/);
   assert.match(indexHtml, /api\.bitrix24\.com\/api\/v1/);
 });
@@ -43,11 +43,14 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
   assert.match(appJs, /crm\.deal\.details\.configuration\.set/);
   assert.match(appJs, /crm\.item\.details\.configuration\.get/);
   assert.match(appJs, /crm\.item\.details\.configuration\.set/);
+  assert.match(appJs, /crm\.category\.list/);
+  assert.match(appJs, /dealCategoryId/);
+  assert.match(appJs, /updatedCategories/);
   assert.match(appJs, /deal_invoice_summary/);
   assert.match(appJs, /function defaultDealCardLayout/);
   assert.match(appJs, /defaultFieldLabels/);
   assert.match(appJs, /if \(defaultLabel\) return defaultLabel/);
-  assert.match(appJs, /layout-20260806-2/);
+  assert.match(appJs, /layout-20260807-1/);
   assert.match(appJs, /operation: "manual-recalculate"/);
   assert.match(appJs, /operation: "ensure-fields"/);
   assert.match(appJs, /operation: "save-mapping"/);

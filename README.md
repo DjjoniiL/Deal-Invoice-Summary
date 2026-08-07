@@ -23,7 +23,7 @@
 - Старый сервер `e95ca529-f434-4432-bbb8-a7e0e8f85837` и URL `https://app-5670766a17c1.vibecode.bitrix24.tech` не использовать.
 - Приложение адаптировано для serverless-формата Bitrix24 Marketplace в папке `marketplace/`: zip содержит только `install.html`, `install.js`, `install.css`, `index.html`, `app.js`, `style.css`.
 - Marketplace-версия работает без своей серверной части и выполняет REST-вызовы напрямую через `BX24.callMethod`.
-- Последний подготовленный локальный Marketplace-архив: `Калькулятор счетов Marketplace v634c7d8.zip`.
+- Последний подготовленный локальный Marketplace-архив: `Калькулятор счетов Marketplace v20260807-1.zip`.
 - OAuth app key проверен через `GET /v1/me`; сам ключ не хранить в документации и репозитории.
 
 ## Функциональность MVP
@@ -103,6 +103,7 @@ API приложения:
 - Для сопоставленных пользовательских полей приложение выставляет `editInList: "N"`. Полноценный запрет редактирования в карточке для всех, кроме администраторов, в текущем VibeCode userfields API не представлен отдельным флагом.
 - Режим `Постоянный` сохраняется в настройках как подготовка к push-событиям. Polling fallback остаётся включённым и не отключается при выборе этого режима.
 - Для событий удаления счёта приложение хранит локальную карту `invoiceId → dealId` в `data/invoice-links.json`. Ручной и polling-пересчёт всегда заново читают актуальный список счетов из Bitrix24, поэтому удалённые счета не попадают в суммы.
+- Marketplace-версия при создании раздела карточки сделки учитывает, что раскладки карточек в Bitrix24 зависят от воронки: приложение получает доступные воронки через `crm.category.list` и пробует обновить общую раскладку каждой воронки с `extras.dealCategoryId`, записывая результат по каждой попытке в журнал.
 
 ## Финальный дизайн
 
@@ -243,7 +244,7 @@ MVP v1 готов для тестовой эксплуатации на порт
 
 Папка `marketplace/` содержит отдельную serverless-адаптацию для загрузки в Bitrix24 Marketplace как статический zip-архив:
 
-- `install.html`, `install.js`, `install.css` — установщик, регистрация вкладки сделки и `BX24.installFinish()`;
+- `install.html`, `install.js`, `install.css` — установщик, регистрация левого меню и `BX24.installFinish()`;
 - `index.html`, `app.js`, `style.css` — интерфейс приложения, расчёт через `BX24.callMethod` без VibeCode backend.
 
 Установщик пробует зарегистрировать только `LEFT_MENU` через `placement.bind` и затем завершает установку через `BX24.installFinish()`. Вкладка карточки сделки для Marketplace-приложения настраивается в developer console в карточке приложения/версии: CRM deal placement должен вести на `index.html`. Это важно, потому что install token Marketplace-архива может не иметь прав на `placement.bind` для `CRM_DEAL_DETAIL_TAB` и возвращать ошибку `The request requires higher privileges than provided by the access token`. Визуально Marketplace-версия должна повторять утверждённый основной экран серверной версии.

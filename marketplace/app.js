@@ -5,7 +5,7 @@ const defaultSettings = {
   unpaidField: "UF_CRM_INV_SUM_UNPAID",
   remainingField: "UF_CRM_INV_SUM_REMAINING",
 };
-const appVersion = "layout-20260806-2";
+const appVersion = "layout-20260807-1";
 const dealSummarySectionName = "deal_invoice_summary";
 const dealSummarySectionTitle = "Расчёт оплаты счетов";
 const defaultFieldLabels = new Map([
@@ -224,26 +224,58 @@ async function configureDealCardSection(settings) {
   if (fieldNames.length < 4) return { ok: false, skipped: true, reason: "Field mapping is incomplete" };
 
   const attempts = [];
+  const categories = await dealCategories();
   const methods = [
-    { get: "crm.deal.details.configuration.get", set: "crm.deal.details.configuration.set", baseParams: {} },
     { get: "crm.item.details.configuration.get", set: "crm.item.details.configuration.set", baseParams: { entityTypeId: 2 } },
+    { get: "crm.deal.details.configuration.get", set: "crm.deal.details.configuration.set", baseParams: {} },
   ];
 
-  for (const scope of ["C", "P"]) {
+  for (const category of categories) {
     for (const method of methods) {
       try {
-        const response = await callMethod(method.get, { ...method.baseParams, scope });
+        const extras = { dealCategoryId: category.id };
+        const response = await callMethod(method.get, { ...method.baseParams, scope: "C", extras });
         const current = response?.data || response;
         const data = mergeDealSummarySection(current, fieldNames);
-        await callMethod(method.set, { ...method.baseParams, scope, data });
-        return { ok: true, method: method.set, scope, sectionName: dealSummarySectionName, fieldNames };
+        await callMethod(method.set, { ...method.baseParams, scope: "C", extras, data });
+        attempts.push({ method: method.set, scope: "C", categoryId: category.id, categoryName: category.name, ok: true });
+        break;
       } catch (error) {
-        attempts.push({ method: method.set, scope, ok: false, error: error.message });
+        attempts.push({ method: method.set, scope: "C", categoryId: category.id, categoryName: category.name, ok: false, error: error.message });
       }
     }
   }
 
-  return { ok: false, attempts, error: "Could not update deal card layout" };
+  const updatedCategories = attempts.filter((attempt) => attempt.ok);
+  if (updatedCategories.length) {
+    return {
+      ok: updatedCategories.length === categories.length,
+      partial: updatedCategories.length !== categories.length,
+      sectionName: dealSummarySectionName,
+      fieldNames,
+      updatedCategories,
+      attempts,
+      note: "Deal card layouts are funnel-specific; the app updates every accessible deal funnel.",
+    };
+  }
+
+  return { ok: false, attempts, error: "Could not update deal card layout for any accessible deal funnel" };
+}
+
+async function dealCategories() {
+  try {
+    const response = await callMethod("crm.category.list", { entityTypeId: 2 });
+    const categories = response?.categories || response?.result?.categories || [];
+    const normalized = categories
+      .map((category) => ({
+        id: Number(category.id ?? category.ID),
+        name: category.name || category.NAME || `Воронка #${category.id ?? category.ID}`,
+      }))
+      .filter((category) => Number.isFinite(category.id));
+    return normalized.length ? normalized : [{ id: 0, name: "Основная" }];
+  } catch (error) {
+    return [{ id: 0, name: `Основная (${error.message})` }];
+  }
 }
 
 function fieldLabel(field, userFieldLabels) {
