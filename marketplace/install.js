@@ -3,7 +3,7 @@ const installButton = document.querySelector("#installButton");
 const logNode = document.querySelector("#log");
 
 // Можно добавить версию, если хотите
-const APP_VERSION = "layout-20260807-7"; // синхронизировать с app.js
+const APP_VERSION = "layout-20260810-1"; // синхронизировать с app.js
 
 function appUrl(fileName = "index.html") {
   const url = new URL(window.location.href);

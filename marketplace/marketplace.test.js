@@ -15,8 +15,8 @@ test("marketplace archive has static Bitrix24 entry files", () => {
   assert.match(installHtml, /install\.js/);
   assert.match(indexHtml, /style\.css/);
   assert.match(indexHtml, /app\.js/);
-  assert.match(indexHtml, /app\.js\?v=layout-20260807-7/);
-  assert.match(indexHtml, /style\.css\?v=layout-20260807-7/);
+  assert.match(indexHtml, /app\.js\?v=layout-20260810-1/);
+  assert.match(indexHtml, /style\.css\?v=layout-20260810-1/);
   assert.match(installHtml, /api\.bitrix24\.com\/api\/v1/);
   assert.match(indexHtml, /api\.bitrix24\.com\/api\/v1/);
 });
@@ -53,7 +53,7 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
   assert.match(appJs, /function defaultDealCardLayout/);
   assert.match(appJs, /defaultFieldLabels/);
   assert.match(appJs, /if \(defaultLabel\) return defaultLabel/);
-  assert.match(appJs, /layout-20260807-7/);
+  assert.match(appJs, /layout-20260810-1/);
   assert.match(appJs, /operation: "manual-recalculate"/);
   assert.match(appJs, /operation: "ensure-fields"/);
   assert.match(appJs, /operation: "save-mapping"/);
@@ -65,13 +65,23 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
 
 test("marketplace report resolves invoice stages and assigned users", () => {
   assert.match(appJs, /crm\.item\.stage\.list/);
+  assert.match(appJs, /crm\.status\.list/);
   assert.match(appJs, /callList\("crm\.item\.stage\.list", \{ entityTypeId: 31 \}, "stages"\)/);
+  assert.match(appJs, /DYNAMIC_31_STAGE_/);
+  assert.match(appJs, /DT31_/);
   assert.match(appJs, /function invoiceStageName/);
   assert.match(appJs, /function invoiceAssignedName/);
   assert.match(appJs, /String\(user\.ID \|\| user\.id\)/);
   assert.match(appJs, /loadUsers\(invoices\.map\(invoiceAssignedById\)\)/);
   assert.match(appJs, /invoiceStageName\(invoice\)/);
   assert.match(appJs, /invoiceAssignedName\(invoice\)/);
+});
+
+test("marketplace report formats invoice dates without time", () => {
+  assert.match(appJs, /function formatDateOnly/);
+  assert.match(appJs, /return `\$\{isoDate\[3\]\}\.\$\{isoDate\[2\]\}\.\$\{isoDate\[1\]\}`/);
+  assert.match(appJs, /invoiceIssuedAt\(invoice\)/);
+  assert.match(appJs, /invoiceDeadline\(invoice\)/);
 });
 
 test("marketplace automation panel keeps disabled server controls contained", () => {

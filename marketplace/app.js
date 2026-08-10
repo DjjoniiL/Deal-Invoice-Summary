@@ -5,7 +5,7 @@ const defaultSettings = {
   unpaidField: "UF_CRM_INV_SUM_UNPAID",
   remainingField: "UF_CRM_INV_SUM_REMAINING",
 };
-const appVersion = "layout-20260807-7";
+const appVersion = "layout-20260810-1";
 const dealSummarySectionName = "deal_invoice_summary";
 const dealSummarySectionTitle = "Расчёт оплаты счетов";
 const defaultFieldLabels = new Map([
@@ -312,11 +312,12 @@ async function dealCategories() {
   }
 }
 
-async function loadInvoiceStages() {
+async function loadInvoiceStages(stageIds = []) {
   try {
     const stages = await callList("crm.item.stage.list", { entityTypeId: 31 }, "stages");
+    const statusStages = await loadInvoiceStatusStages(stageIds);
     stageMap = new Map(
-      stages
+      [...stages, ...statusStages]
         .map((stage) => [stageCode(stage), stageTitle(stage)])
         .filter(([code, title]) => code && title),
     );
@@ -325,6 +326,14 @@ async function loadInvoiceStages() {
     stageMap = new Map();
     console.warn("Не удалось загрузить стадии счетов:", error.message);
   }
+}
+
+async function loadInvoiceStatusStages(stageIds = []) {
+  const entityIds = [...new Set(stageIds.map(invoiceStageEntityId).filter(Boolean))];
+  const stageGroups = await Promise.all(
+    entityIds.map((entityId) => callList("crm.status.list", { filter: { ENTITY_ID: entityId } })),
+  );
+  return stageGroups.flat();
 }
 
 async function loadUsers(userIds = []) {
@@ -364,6 +373,11 @@ function invoiceStageId(invoice) {
   return String(invoice.stageId || invoice.STAGE_ID || invoice.stage_id || "").trim();
 }
 
+function invoiceStageEntityId(stageId) {
+  const match = String(stageId || "").match(/^DT31_(\d+):/i);
+  return match ? `DYNAMIC_31_STAGE_${match[1]}` : "";
+}
+
 function invoiceStageName(invoice) {
   const id = invoiceStageId(invoice);
   return stageMap.get(id) || id || "Без стадии";
@@ -383,11 +397,27 @@ function invoiceAmount(invoice) {
 }
 
 function invoiceIssuedAt(invoice) {
-  return invoice.begindate || invoice.BEGINDATE || invoice.beginDate || invoice.createdTime || invoice.CREATED_TIME || "";
+  return formatDateOnly(invoice.begindate || invoice.BEGINDATE || invoice.beginDate || invoice.createdTime || invoice.CREATED_TIME);
 }
 
 function invoiceDeadline(invoice) {
-  return invoice.closedate || invoice.CLOSEDATE || invoice.closeDate || "";
+  return formatDateOnly(invoice.closedate || invoice.CLOSEDATE || invoice.closeDate);
+}
+
+function formatDateOnly(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+
+  const isoDate = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoDate) return `${isoDate[3]}.${isoDate[2]}.${isoDate[1]}`;
+
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return text;
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
 }
 
 function fieldLabel(field, userFieldLabels) {
@@ -518,7 +548,7 @@ async function recalculate(dealId, write = true) {
     getInvoices(dealId),
   ]);
   await Promise.all([
-    loadInvoiceStages(),
+    loadInvoiceStages(invoices.map(invoiceStageId)),
     loadUsers(invoices.map(invoiceAssignedById)),
   ]);
   const summary = summarize(deal, invoices, settings);
