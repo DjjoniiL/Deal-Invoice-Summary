@@ -86,6 +86,12 @@ body {
   background: #172033;
   color: #fff;
   font-weight: 700;
+  cursor: pointer;
+}
+
+.notice-action:focus-visible {
+  outline: 3px solid rgba(14, 132, 112, .24);
+  outline-offset: 2px;
 }
 
 h1,

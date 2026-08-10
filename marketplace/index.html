@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="style.css?v=layout-20260810-7">
+    <link rel="stylesheet" href="style.css?v=layout-20260810-8">
     <title>Калькулятор счетов</title>
     <script src="//api.bitrix24.com/api/v1/"></script>
   </head>
@@ -23,7 +23,7 @@
           <strong>Нужна доработка этого приложения или разработка нового?</strong>
           <p>Опишите задачу: добавим отчёты, автоматизацию, виджеты открытых линий и интеграции под ваши процессы Bitrix24.</p>
         </div>
-        <span class="notice-action" data-pending-openline-url="Bisness i 24">Обратиться</span>
+        <span class="notice-action" role="button" tabindex="0">Обратиться</span>
       </section>
 
       <section class="setup-grid">
@@ -59,6 +59,7 @@
           <div class="automation-list">
             <label>Режим расчёта
               <select id="automationMode">
+                <option value="manual" selected>Ручной</option>
                 <option value="twiceDaily">Утром и вечером</option>
                 <option value="continuous">Постоянный</option>
               </select>
@@ -73,10 +74,10 @@
                 <option value="2">2 суток</option>
               </select>
             </label>
-            <span>Интервал</span>
-            <strong id="automationInterval">ручной запуск по окну</strong>
-            <span>Пробуждение</span>
-            <strong id="automationWake">не требуется</strong>
+            <span class="server-only">Интервал</span>
+            <strong id="automationInterval" class="server-only">ручной запуск по окну</strong>
+            <span class="server-only">Пробуждение</span>
+            <strong id="automationWake" class="server-only">не требуется</strong>
             <span>Отслеживается сделок</span>
             <strong id="automationTracked">0</strong>
             <span>Последний запуск</span>
@@ -110,7 +111,6 @@
           <label>Ссылка на сделку<input name="dealUrl" inputmode="url" placeholder="https://portal.bitrix24.ru/crm/deal/details/2/"></label>
           <button>Пересчитать сделку</button>
         </form>
-        <pre id="result" hidden>Готово к работе.</pre>
         <div class="marketplace-report" hidden>
           <div class="metric-grid">
             <article class="metric issued"><span>Выставлено</span><strong id="issued">0</strong></article>
@@ -124,22 +124,40 @@
           </div>
           <div id="invoiceList" class="invoice-list"></div>
         </div>
+        <pre id="result" hidden>Готово к работе.</pre>
       </section>
     </main>
     <div id="serverSupportModal" class="modal-backdrop" hidden>
       <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="serverSupportTitle">
         <h2 id="serverSupportTitle">Нужна серверная поддержка</h2>
-        <p>Постоянный автопересчёт требует аренды сервера на платформе VibeCode. Если Вам это необходимо, напишите нам через кнопку «Обратиться».</p>
+        <p id="serverSupportIntro">Автоматический пересчёт требует аренды сервера на платформе VibeCode. Если Вам это необходимо, напишите нам через кнопку «Обратиться».</p>
+        <p id="serverSupportDetails"></p>
         <div class="modal-actions">
           <button id="closeServerSupportModal" type="button" class="secondary-button">Закрыть</button>
-          <button id="requestServerSupport" type="button">Заявка на серверную поддержку</button>
+          <button id="requestServerSupport" type="button">Заявка на серверную версию</button>
         </div>
       </section>
     </div>
+    <div id="windowReportModal" class="modal-backdrop" hidden>
+      <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="windowReportTitle">
+        <h2 id="windowReportTitle">Отчёт сформирован</h2>
+        <p id="windowReportText">Отчёт за выбранный период готов.</p>
+        <div class="modal-actions">
+          <button id="closeWindowReportModal" type="button" class="secondary-button">Закрыть</button>
+          <button id="downloadWindowReport" type="button">Скачать отчёт</button>
+        </div>
+      </section>
+    </div>
+    <script>
+      (function(w,d,u){
+        var s=d.createElement('script');s.async=true;s.src=u+'?'+(Date.now()/60000|0);
+        var h=d.getElementsByTagName('script')[0];h.parentNode.insertBefore(s,h);
+      })(window,document,'https://cdn-ru.bitrix24.ru/b31051/crm/site_button/loader_9_no7zeu.js');
+    </script>
     <!-- Принудительное обновление версии -->
-    <script src="app.js?v=layout-20260810-7"></script>
+    <script src="app.js?v=layout-20260810-8"></script>
     <div style="font-size:10px;color:#999;text-align:center;margin-top:8px;">
-      Версия: layout-20260810-7
+      Версия: layout-20260810-8
     </div>
   </body>
 </html>

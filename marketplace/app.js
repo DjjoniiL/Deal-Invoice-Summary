@@ -5,7 +5,7 @@ const defaultSettings = {
   unpaidField: "UF_CRM_INV_SUM_UNPAID",
   remainingField: "UF_CRM_INV_SUM_REMAINING",
 };
-const appVersion = "layout-20260810-7";
+const appVersion = "layout-20260810-8";
 const dealSummarySectionName = "deal_invoice_summary";
 const dealSummarySectionTitle = "Расчёт оплаты счетов";
 const defaultFieldLabels = new Map([
@@ -38,8 +38,14 @@ const automationProgressBar = document.querySelector("#automationProgressBar");
 const recentButton = document.querySelector("#recent");
 const serverStatusButton = document.querySelector("#serverStatusButton");
 const serverSupportModal = document.querySelector("#serverSupportModal");
+const serverSupportIntro = document.querySelector("#serverSupportIntro");
+const serverSupportDetails = document.querySelector("#serverSupportDetails");
 const closeServerSupportModal = document.querySelector("#closeServerSupportModal");
 const requestServerSupport = document.querySelector("#requestServerSupport");
+const windowReportModal = document.querySelector("#windowReportModal");
+const windowReportText = document.querySelector("#windowReportText");
+const closeWindowReportModal = document.querySelector("#closeWindowReportModal");
+const downloadWindowReportButton = document.querySelector("#downloadWindowReport");
 const noticeAction = document.querySelector(".notice-action");
 const totalNodes = {
   issued: document.querySelector("#issued"),
@@ -53,6 +59,7 @@ let stageMap = new Map();
 let userMap = new Map();
 let stageDiagnostics = null;
 let serverSupport = { connected: false };
+let lastWindowReport = null;
 
 console.info(`Deal Invoice Summary Marketplace ${appVersion}`);
 
@@ -71,8 +78,15 @@ function setMappingStatus(text, tone = "neutral") {
   mappingStatus.dataset.tone = tone;
 }
 
-function showServerSupportModal() {
+const serverSupportModeDetails = {
+  continuous: 'Режим "Постоянный" - сервер будет просыпаться каждые 2 часа с 8 утра до 19:00, с таймером сна в 15 мин после пробуждения. Интервал пересчёта - дважды после пробуждения, т.е. каждые 7 мин. За сутки время работы сервера составит 1 час 30 минут.',
+  twiceDaily: 'Режим "Утром и вечером" - сервер будет включаться в заданное время утром и вечером, всего два раза в сутки, с таймером сна в 15 мин после каждого пробуждения. Интервал пересчёта - дважды после пробуждения, т.е. каждые 7 мин. За сутки время работы сервера составит 30 минут.',
+};
+
+function showServerSupportModal(mode = automationMode.value) {
   if (serverSupport.connected) return;
+  serverSupportIntro.textContent = "Автоматический пересчёт требует аренды сервера на платформе VibeCode. Если Вам это необходимо, напишите нам через кнопку «Обратиться».";
+  serverSupportDetails.textContent = serverSupportModeDetails[mode] || "";
   serverSupportModal.hidden = false;
 }
 
@@ -82,13 +96,34 @@ function hideServerSupportModal() {
 
 function requestServerSupportAction() {
   hideServerSupportModal();
+  openOpenLine();
   write({
     appVersion,
     ok: true,
     operation: "server-support-request",
-    message: "Заявка на серверную поддержку: используйте кнопку «Обратиться» или передайте ссылку открытой линии для подключения.",
+    message: "Заявка на серверную версию: открываем линию поддержки.",
   }, { reveal: true });
-  noticeAction?.focus?.();
+}
+
+function openOpenLine() {
+  const selectors = [
+    ".b24-widget-button-openline_livechat",
+    ".b24-widget-button-social-item",
+    ".b24-widget-button-inner-container",
+    ".b24-widget-button-wrapper",
+  ];
+  const target = selectors.map((selector) => document.querySelector(selector)).find(Boolean);
+  if (target) target.click();
+}
+
+function showWindowReportModal(report) {
+  lastWindowReport = report;
+  windowReportText.textContent = `Отчёт за последние ${report.days} суток сформирован. Сделок в отчёте: ${report.dealCount}.`;
+  windowReportModal.hidden = false;
+}
+
+function hideWindowReportModal() {
+  windowReportModal.hidden = true;
 }
 
 function setAutomationProgress(text, percent, { visible = true, tone = "active" } = {}) {
@@ -226,6 +261,9 @@ function renderServerSupport() {
   serverStatusButton.textContent = serverSupport.connected
     ? "Серверная поддержка подключена"
     : "Автопересчёт доступен в серверной версии";
+  document.querySelectorAll(".server-only").forEach((node) => {
+    node.hidden = !serverSupport.connected;
+  });
 }
 
 function normalizeWindowDays(value) {
@@ -426,6 +464,7 @@ async function loadInvoiceStages(stageIds = []) {
   }
 
   stages.push(...await loadInvoiceStatusStages(requested, attempts));
+  stages.push(...await loadInvoiceStatusStagesFromTypes(requested, attempts));
   stageMap = new Map(
     stages
       .flatMap((stage) => stageCodes(stage).map((code) => [code, stageTitle(stage)]))
@@ -473,6 +512,51 @@ async function loadInvoiceStatusStages(stageIds = [], attempts = []) {
   return stages;
 }
 
+async function loadInvoiceStatusStagesFromTypes(stageIds = [], attempts = []) {
+  const requestedPrefixes = new Set(
+    stageIds
+      .map((stageId) => String(stageId || "").split(":")[0])
+      .filter(Boolean),
+  );
+  if (!requestedPrefixes.size) return [];
+
+  try {
+    const types = await callList("crm.status.entity.types");
+    const matchedTypes = types.filter((type) => {
+      const prefix = String(type.PREFIX || type.prefix || "").trim();
+      const entityTypeId = Number(type.ENTITY_TYPE_ID || type.entityTypeId || 0);
+      return entityTypeId === 31 && requestedPrefixes.has(prefix);
+    });
+    attempts.push({
+      method: "crm.status.entity.types",
+      ok: true,
+      count: types.length,
+      matched: matchedTypes.map((type) => ({
+        ID: type.ID || type.id,
+        PREFIX: type.PREFIX || type.prefix,
+        CATEGORY_ID: type.CATEGORY_ID || type.categoryId,
+      })),
+    });
+
+    const stages = [];
+    for (const type of matchedTypes) {
+      const entityId = String(type.ID || type.id || "").trim();
+      if (!entityId) continue;
+      try {
+        const rows = await callList("crm.status.list", { order: { SORT: "ASC" }, filter: { ENTITY_ID: entityId } });
+        attempts.push({ method: "crm.status.list", source: "entity.types", filter: { ENTITY_ID: entityId }, ok: true, count: rows.length });
+        stages.push(...rows);
+      } catch (error) {
+        attempts.push({ method: "crm.status.list", source: "entity.types", filter: { ENTITY_ID: entityId }, ok: false, error: error.message });
+      }
+    }
+    return stages;
+  } catch (error) {
+    attempts.push({ method: "crm.status.entity.types", ok: false, error: error.message });
+    return [];
+  }
+}
+
 async function loadUsers(userIds = []) {
   try {
     const ids = [...new Set(userIds.map((id) => Number(id)).filter(Boolean))];
@@ -501,7 +585,7 @@ function stageCodes(stage) {
 function statusStageCode(stage) {
   const entityId = String(stage?.entityId || stage?.ENTITY_ID || "").trim();
   const statusId = String(stage?.statusId || stage?.STATUS_ID || stage?.id || stage?.ID || "").trim();
-  const match = entityId.match(/^DYNAMIC_31_STAGE_(\d+)$/i);
+  const match = entityId.match(/^(?:DYNAMIC_31_STAGE|SMART_INVOICE_STAGE)_(\d+)$/i);
   return match && statusId && !statusId.includes(":") ? `DT31_${match[1]}:${statusId}` : "";
 }
 
@@ -699,8 +783,8 @@ async function recalculateDealsInWindow() {
       setAutomationProgress("Сделок для пересчёта не найдено", 100, { tone: "warning" });
       automationLastRun.textContent = formatLastRun(new Date().toISOString());
       const report = { appVersion, ok: true, operation: "marketplace-window-recalculate", days, ...recent, dealCount: 0, results: [] };
-      write({ ...report, message: "Сделок за выбранный период нет. CSV-отчёт сформирован автоматически." }, { reveal: true });
-      downloadWindowReport(report);
+      write({ ...report, message: "Сделок за выбранный период нет. Отчёт сформирован и готов к скачиванию." }, { reveal: true });
+      showWindowReportModal(report);
       return;
     }
 
@@ -721,8 +805,8 @@ async function recalculateDealsInWindow() {
     setAutomationProgress(ok ? "Пересчёт сделок завершён" : "Пересчёт завершён с ошибками", 100, { tone: ok ? "success" : "warning" });
     automationLastRun.textContent = formatLastRun(new Date().toISOString());
     const report = { appVersion, ok, operation: "marketplace-window-recalculate", days, ...recent, dealCount: recent.dealIds.length, results };
-    write({ ...report, message: "Пересчёт завершён. CSV-отчёт сформирован автоматически." }, { reveal: true });
-    downloadWindowReport(report);
+    write({ ...report, message: "Пересчёт завершён. Отчёт сформирован и готов к скачиванию." }, { reveal: true });
+    showWindowReportModal(report);
   } catch (error) {
     setAutomationProgress("Ошибка пересчёта сделок", 100, { tone: "warning" });
     write({ appVersion, ok: false, operation: "marketplace-window-recalculate", error: error.message }, { reveal: true });
@@ -867,13 +951,15 @@ function downloadReport() {
 }
 
 function downloadWindowReport(report) {
+  const source = report || lastWindowReport;
+  if (!source) return;
   const rows = [
-    ["Период", `последние ${report.days} суток`],
-    ["С", formatDateOnly(report.since)],
-    ["Сделок", report.dealCount],
+    ["Период", `последние ${source.days} суток`],
+    ["С", formatDateOnly(source.since)],
+    ["Сделок", source.dealCount],
     [],
     ["ID сделки", "Название", "Выставлено", "Оплачено", "Не оплачено", "Остаток", "Счетов", "В расчёте", "Ошибки", "Неразрешённые стадии"],
-    ...report.results.map((item) => [
+    ...source.results.map((item) => [
       item.dealId,
       item.title || "",
       item.summary?.issued ?? "",
@@ -889,7 +975,7 @@ function downloadWindowReport(report) {
   const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(";")).join("\r\n");
   const link = document.createElement("a");
   link.href = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" }));
-  link.download = `deal-invoice-window-${report.days}-days.csv`;
+  link.download = `deal-invoice-window-${source.days}-days.csv`;
   link.click();
   URL.revokeObjectURL(link.href);
 }
@@ -903,7 +989,7 @@ async function initApp() {
   const settings = await loadSettings();
   serverSupport = await loadServerSupport();
   renderServerSupport();
-  automationMode.value = settings.autoRecalcMode || "twiceDaily";
+  automationMode.value = settings.autoRecalcMode || "manual";
   autoRecalcWindowDays.value = String(normalizeWindowDays(settings.autoRecalcWindowDays));
   const [fields, userFields] = await Promise.all([
     callMethod("crm.deal.fields"),
@@ -981,12 +1067,24 @@ document.querySelector("#refresh").addEventListener("click", initApp);
 document.querySelector("#downloadReport").addEventListener("click", downloadReport);
 recentButton.addEventListener("click", recalculateDealsInWindow);
 automationMode.addEventListener("change", () => {
-  if (automationMode.value === "continuous" && !serverSupport.connected) showServerSupportModal();
+  if (["continuous", "twiceDaily"].includes(automationMode.value) && !serverSupport.connected) showServerSupportModal(automationMode.value);
 });
 closeServerSupportModal.addEventListener("click", hideServerSupportModal);
 requestServerSupport.addEventListener("click", requestServerSupportAction);
 serverSupportModal.addEventListener("click", (event) => {
   if (event.target === serverSupportModal) hideServerSupportModal();
+});
+closeWindowReportModal.addEventListener("click", hideWindowReportModal);
+downloadWindowReportButton.addEventListener("click", () => downloadWindowReport());
+windowReportModal.addEventListener("click", (event) => {
+  if (event.target === windowReportModal) hideWindowReportModal();
+});
+noticeAction.addEventListener("click", openOpenLine);
+noticeAction.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    openOpenLine();
+  }
 });
 logToggle.addEventListener("click", () => setLogVisible(resultNode.hidden));
 dealUrlInput.addEventListener("input", () => {

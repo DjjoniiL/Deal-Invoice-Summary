@@ -15,8 +15,8 @@ test("marketplace archive has static Bitrix24 entry files", () => {
   assert.match(installHtml, /install\.js/);
   assert.match(indexHtml, /style\.css/);
   assert.match(indexHtml, /app\.js/);
-  assert.match(indexHtml, /app\.js\?v=layout-20260810-7/);
-  assert.match(indexHtml, /style\.css\?v=layout-20260810-7/);
+  assert.match(indexHtml, /app\.js\?v=layout-20260810-8/);
+  assert.match(indexHtml, /style\.css\?v=layout-20260810-8/);
   assert.match(installHtml, /api\.bitrix24\.com\/api\/v1/);
   assert.match(indexHtml, /api\.bitrix24\.com\/api\/v1/);
 });
@@ -56,7 +56,7 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
   assert.match(appJs, /function defaultDealCardLayout/);
   assert.match(appJs, /defaultFieldLabels/);
   assert.match(appJs, /if \(defaultLabel\) return defaultLabel/);
-  assert.match(appJs, /layout-20260810-7/);
+  assert.match(appJs, /layout-20260810-8/);
   assert.match(appJs, /operation: "manual-recalculate"/);
   assert.match(appJs, /operation: "ensure-fields"/);
   assert.match(appJs, /operation: "save-mapping"/);
@@ -73,6 +73,8 @@ test("marketplace report resolves invoice stages and assigned users", () => {
   assert.match(appJs, /STATUS_ID: stageId/);
   assert.match(appJs, /callList\("crm\.item\.stage\.list", \{ entityTypeId: 31 \}, "stages"\)/);
   assert.match(appJs, /SMART_INVOICE_STAGE_/);
+  assert.match(appJs, /crm\.status\.entity\.types/);
+  assert.match(appJs, /\?:DYNAMIC_31_STAGE\|SMART_INVOICE_STAGE/);
   assert.match(appJs, /DT31_\$\{match\[1\]\}:\$\{statusId\}/);
   assert.match(appJs, /function statusStageCode/);
   assert.match(appJs, /function invoiceStageName/);
@@ -91,10 +93,17 @@ test("marketplace report formats invoice dates without time", () => {
 });
 
 test("marketplace automation panel keeps disabled server controls contained", () => {
+  assert.match(indexHtml, /<option value="manual" selected>Ручной<\/option>/);
   assert.match(indexHtml, /Утром и вечером/);
   assert.match(indexHtml, /Постоянный/);
   assert.match(indexHtml, /Нужна серверная поддержка/);
-  assert.match(indexHtml, /Заявка на серверную поддержку/);
+  assert.match(appJs, /каждые 2 часа с 8 утра до 19:00/);
+  assert.match(appJs, /За сутки время работы сервера составит 30 минут/);
+  assert.match(indexHtml, /Заявка на серверную версию/);
+  assert.match(indexHtml, /windowReportModal/);
+  assert.match(indexHtml, /downloadWindowReport/);
+  assert.match(indexHtml, /loader_9_no7zeu\.js/);
+  assert.match(indexHtml, /class="server-only"/);
   assert.match(indexHtml, /42 суток/);
   assert.match(indexHtml, /Автопересчёт доступен в серверной версии/);
   assert.match(indexHtml, /Сделать пересчёт всех сделок/);
@@ -102,12 +111,16 @@ test("marketplace automation panel keeps disabled server controls contained", ()
   assert.match(appJs, /marketplace-window-recalculate/);
   assert.match(appJs, /function recalculateDealsInWindow/);
   assert.match(appJs, /function downloadWindowReport/);
+  assert.match(appJs, /function showWindowReportModal/);
   assert.match(appJs, /function loadServerSupport/);
+  assert.match(appJs, /function openOpenLine/);
   assert.match(appJs, /dealInvoiceSummaryServerSupport/);
   assert.match(appJs, /if \(serverSupport\.connected\) return/);
-  assert.match(appJs, /automationMode\.value === "continuous"/);
-  assert.match(appJs, /CSV-отчёт сформирован автоматически/);
-  assert.match(appJs, /deal-invoice-window-\$\{report\.days\}-days\.csv/);
+  assert.match(appJs, /\["continuous", "twiceDaily"\]\.includes\(automationMode\.value\)/);
+  assert.match(appJs, /settings\.autoRecalcMode \|\| "manual"/);
+  assert.match(appJs, /Отчёт сформирован и готов к скачиванию/);
+  assert.doesNotMatch(appJs, /CSV-отчёт сформирован автоматически/);
+  assert.match(appJs, /deal-invoice-window-\$\{source\.days\}-days\.csv/);
   assert.match(appJs, />=\$\{fieldName\}/);
   assert.match(styleCss, /\.automation-panel button\s*{[\s\S]*width:\s*100%/);
   assert.match(styleCss, /\.automation-panel button\s*{[\s\S]*white-space:\s*normal/);
