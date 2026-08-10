@@ -1005,7 +1005,7 @@ function downloadWindowReport(report) {
     ["С", formatDateOnly(source.since)],
     ["Сделок", source.dealCount],
     [],
-    ["ID сделки", "Название", "Выставлено", "Оплачено", "Не оплачено", "Остаток", "Счетов", "В расчёте", "Ошибки", "Неразрешённые стадии"],
+    ["ID сделки", "Название", "Выставлено", "Оплачено", "Не оплачено", "Остаток", "Счетов", "В расчёте"],
     ...source.results.map((item) => [
       item.dealId,
       item.title || "",
@@ -1015,8 +1015,6 @@ function downloadWindowReport(report) {
       item.summary?.remaining ?? "",
       item.summary?.invoiceCount ?? "",
       item.summary?.countedInvoiceCount ?? "",
-      item.error || "",
-      (item.stageLookup?.unresolved || []).join(", "),
     ]),
   ];
   const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(";")).join("\r\n");

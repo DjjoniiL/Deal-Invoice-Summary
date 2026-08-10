@@ -23,7 +23,7 @@
 - Старый сервер `e95ca529-f434-4432-bbb8-a7e0e8f85837` и URL `https://app-5670766a17c1.vibecode.bitrix24.tech` не использовать.
 - Приложение адаптировано для serverless-формата Bitrix24 Marketplace в папке `marketplace/`: zip содержит только `install.html`, `install.js`, `install.css`, `index.html`, `app.js`, `style.css`.
 - Marketplace-версия работает без своей серверной части и выполняет REST-вызовы напрямую через `BX24.callMethod`.
-- Последний подготовленный локальный Marketplace-архив: `Калькулятор счетов Marketplace v14.zip` (`layout-20260810-14`).
+- Последний подготовленный локальный Marketplace-архив: `Калькулятор счетов Marketplace v14-2.zip` (`layout-20260810-14`).
 - OAuth app key проверен через `GET /v1/me`; сам ключ не хранить в документации и репозитории.
 
 ## Функциональность MVP

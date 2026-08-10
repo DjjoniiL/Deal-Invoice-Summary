@@ -123,6 +123,8 @@ test("marketplace automation panel keeps disabled server controls contained", ()
   assert.match(appJs, /marketplace-window-recalculate/);
   assert.match(appJs, /function recalculateDealsInWindow/);
   assert.match(appJs, /function downloadWindowReport/);
+  assert.doesNotMatch(appJs, /"Ошибки", "Неразрешённые стадии"/);
+  assert.doesNotMatch(appJs, /\(item\.stageLookup\?\.unresolved \|\| \[\]\)\.join\(", "\)/);
   assert.match(appJs, /function showWindowReportModal/);
   assert.match(appJs, /function loadServerSupport/);
   assert.match(appJs, /function openOpenLine/);
