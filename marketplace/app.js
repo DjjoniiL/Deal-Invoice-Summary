@@ -5,7 +5,7 @@ const defaultSettings = {
   unpaidField: "UF_CRM_INV_SUM_UNPAID",
   remainingField: "UF_CRM_INV_SUM_REMAINING",
 };
-const appVersion = "layout-20260810-1";
+const appVersion = "layout-20260810-7";
 const dealSummarySectionName = "deal_invoice_summary";
 const dealSummarySectionTitle = "Расчёт оплаты счетов";
 const defaultFieldLabels = new Map([
@@ -27,6 +27,20 @@ const resultNode = document.querySelector("#result");
 const reportNode = document.querySelector(".marketplace-report");
 const dealTitle = document.querySelector("#dealTitle");
 const invoiceList = document.querySelector("#invoiceList");
+const automationMode = document.querySelector("#automationMode");
+const autoRecalcWindowDays = document.querySelector("#autoRecalcWindowDays");
+const automationTracked = document.querySelector("#automationTracked");
+const automationLastRun = document.querySelector("#automationLastRun");
+const automationProgress = document.querySelector("#automationProgress");
+const automationProgressText = document.querySelector("#automationProgressText");
+const automationProgressValue = document.querySelector("#automationProgressValue");
+const automationProgressBar = document.querySelector("#automationProgressBar");
+const recentButton = document.querySelector("#recent");
+const serverStatusButton = document.querySelector("#serverStatusButton");
+const serverSupportModal = document.querySelector("#serverSupportModal");
+const closeServerSupportModal = document.querySelector("#closeServerSupportModal");
+const requestServerSupport = document.querySelector("#requestServerSupport");
+const noticeAction = document.querySelector(".notice-action");
 const totalNodes = {
   issued: document.querySelector("#issued"),
   paid: document.querySelector("#paid"),
@@ -37,6 +51,8 @@ let currentReport = null;
 let portalHost = "";
 let stageMap = new Map();
 let userMap = new Map();
+let stageDiagnostics = null;
+let serverSupport = { connected: false };
 
 console.info(`Deal Invoice Summary Marketplace ${appVersion}`);
 
@@ -53,6 +69,39 @@ function write(value, { reveal = false } = {}) {
 function setMappingStatus(text, tone = "neutral") {
   mappingStatus.textContent = text;
   mappingStatus.dataset.tone = tone;
+}
+
+function showServerSupportModal() {
+  if (serverSupport.connected) return;
+  serverSupportModal.hidden = false;
+}
+
+function hideServerSupportModal() {
+  serverSupportModal.hidden = true;
+}
+
+function requestServerSupportAction() {
+  hideServerSupportModal();
+  write({
+    appVersion,
+    ok: true,
+    operation: "server-support-request",
+    message: "Заявка на серверную поддержку: используйте кнопку «Обратиться» или передайте ссылку открытой линии для подключения.",
+  }, { reveal: true });
+  noticeAction?.focus?.();
+}
+
+function setAutomationProgress(text, percent, { visible = true, tone = "active" } = {}) {
+  automationProgress.hidden = !visible;
+  automationProgress.dataset.tone = tone;
+  automationProgressText.textContent = text;
+  automationProgressValue.textContent = `${percent}%`;
+  automationProgressBar.style.width = `${percent}%`;
+}
+
+function formatLastRun(value) {
+  if (!value) return "Пока не запускался";
+  return new Date(value).toLocaleString("ru-RU", { hour12: false });
 }
 
 function callMethod(method, params = {}) {
@@ -132,6 +181,57 @@ async function loadSettings() {
     const local = localStorage.getItem("dealInvoiceSummarySettings");
     return { ...defaultSettings, ...(local ? JSON.parse(local) : {}) };
   }
+}
+
+async function readAppOption(option) {
+  try {
+    return await callMethod("app.option.get", { option });
+  } catch {
+    return localStorage.getItem(option);
+  }
+}
+
+function parseServerSupport(value) {
+  if (!value) return null;
+  if (value === true || value === "true") return { connected: true };
+  if (typeof value === "string") {
+    try {
+      return parseServerSupport(JSON.parse(value));
+    } catch {
+      return value.trim() ? { connected: true, value } : null;
+    }
+  }
+  if (typeof value === "object") {
+    const connected = Boolean(value.connected || value.enabled || value.serverId || value.serverUrl || value.url);
+    return connected ? { connected: true, ...value } : null;
+  }
+  return null;
+}
+
+async function loadServerSupport() {
+  const options = [
+    "dealInvoiceSummaryServerSupport",
+    "dealInvoiceSummaryServer",
+    "dealInvoiceSummaryServerUrl",
+    "dealInvoiceSummaryBackendUrl",
+  ];
+  for (const option of options) {
+    const detected = parseServerSupport(await readAppOption(option));
+    if (detected) return { option, ...detected };
+  }
+  return { connected: false };
+}
+
+function renderServerSupport() {
+  serverStatusButton.textContent = serverSupport.connected
+    ? "Серверная поддержка подключена"
+    : "Автопересчёт доступен в серверной версии";
+}
+
+function normalizeWindowDays(value) {
+  const allowed = [42, 28, 21, 14, 7, 2];
+  const days = Number(value);
+  return allowed.includes(days) ? days : 21;
 }
 
 async function saveSettings(settings) {
@@ -313,27 +413,64 @@ async function dealCategories() {
 }
 
 async function loadInvoiceStages(stageIds = []) {
+  const requested = [...new Set(stageIds.filter(Boolean))];
+  const attempts = [];
+  const stages = [];
+
   try {
-    const stages = await callList("crm.item.stage.list", { entityTypeId: 31 }, "stages");
-    const statusStages = await loadInvoiceStatusStages(stageIds);
-    stageMap = new Map(
-      [...stages, ...statusStages]
-        .map((stage) => [stageCode(stage), stageTitle(stage)])
-        .filter(([code, title]) => code && title),
-    );
+    const itemStages = await callList("crm.item.stage.list", { entityTypeId: 31 }, "stages");
+    attempts.push({ method: "crm.item.stage.list", ok: true, count: itemStages.length });
+    stages.push(...itemStages);
   } catch (error) {
-    // Если не удалось загрузить стадии, останутся коды.
-    stageMap = new Map();
-    console.warn("Не удалось загрузить стадии счетов:", error.message);
+    attempts.push({ method: "crm.item.stage.list", ok: false, error: error.message });
+  }
+
+  stages.push(...await loadInvoiceStatusStages(requested, attempts));
+  stageMap = new Map(
+    stages
+      .flatMap((stage) => stageCodes(stage).map((code) => [code, stageTitle(stage)]))
+      .filter(([code, title]) => code && title),
+  );
+
+  const unresolved = requested.filter((stageId) => !stageMap.has(stageId));
+  stageDiagnostics = {
+    requested,
+    resolvedCount: stageMap.size,
+    unresolved,
+    attempts,
+  };
+
+  if (unresolved.length) {
+    console.warn("Не удалось сопоставить стадии счетов:", unresolved.join(", "));
   }
 }
 
-async function loadInvoiceStatusStages(stageIds = []) {
+async function loadInvoiceStatusStages(stageIds = [], attempts = []) {
   const entityIds = [...new Set(stageIds.map(invoiceStageEntityId).filter(Boolean))];
-  const stageGroups = await Promise.all(
-    entityIds.map((entityId) => callList("crm.status.list", { filter: { ENTITY_ID: entityId } })),
-  );
-  return stageGroups.flat();
+  const stages = [];
+  for (const entityId of entityIds) {
+    try {
+      const rows = await callList("crm.status.list", { order: { SORT: "ASC" }, filter: { ENTITY_ID: entityId } });
+      attempts.push({ method: "crm.status.list", filter: { ENTITY_ID: entityId }, ok: true, count: rows.length });
+      stages.push(...rows);
+    } catch (error) {
+      attempts.push({ method: "crm.status.list", filter: { ENTITY_ID: entityId }, ok: false, error: error.message });
+    }
+  }
+
+  for (const stageId of stageIds) {
+    const entityId = invoiceStageEntityId(stageId);
+    if (!entityId) continue;
+    try {
+      const rows = await callList("crm.status.list", { filter: { ENTITY_ID: entityId, STATUS_ID: stageId } });
+      attempts.push({ method: "crm.status.list", filter: { ENTITY_ID: entityId, STATUS_ID: stageId }, ok: true, count: rows.length });
+      stages.push(...rows);
+    } catch (error) {
+      attempts.push({ method: "crm.status.list", filter: { ENTITY_ID: entityId, STATUS_ID: stageId }, ok: false, error: error.message });
+    }
+  }
+
+  return stages;
 }
 
 async function loadUsers(userIds = []) {
@@ -357,6 +494,17 @@ function stageCode(stage) {
   return String(stage?.id || stage?.ID || stage?.statusId || stage?.STATUS_ID || "").trim();
 }
 
+function stageCodes(stage) {
+  return [...new Set([stageCode(stage), statusStageCode(stage)].filter(Boolean))];
+}
+
+function statusStageCode(stage) {
+  const entityId = String(stage?.entityId || stage?.ENTITY_ID || "").trim();
+  const statusId = String(stage?.statusId || stage?.STATUS_ID || stage?.id || stage?.ID || "").trim();
+  const match = entityId.match(/^DYNAMIC_31_STAGE_(\d+)$/i);
+  return match && statusId && !statusId.includes(":") ? `DT31_${match[1]}:${statusId}` : "";
+}
+
 function stageTitle(stage) {
   return String(stage?.name || stage?.NAME || stage?.title || stage?.TITLE || "").trim();
 }
@@ -375,7 +523,7 @@ function invoiceStageId(invoice) {
 
 function invoiceStageEntityId(stageId) {
   const match = String(stageId || "").match(/^DT31_(\d+):/i);
-  return match ? `DYNAMIC_31_STAGE_${match[1]}` : "";
+  return match ? `SMART_INVOICE_STAGE_${match[1]}` : "";
 }
 
 function invoiceStageName(invoice) {
@@ -518,6 +666,71 @@ async function getInvoices(dealId) {
   return response.items || response.result?.items || [];
 }
 
+async function getRecentInvoiceDealIds(days) {
+  const since = new Date(Date.now() - normalizeWindowDays(days) * 24 * 60 * 60 * 1000).toISOString();
+  const attempts = [];
+  const invoices = [];
+  for (const fieldName of ["createdTime", "begindate"]) {
+    try {
+      const rows = await callList("crm.item.list", {
+        entityTypeId: 31,
+        filter: { [`>=${fieldName}`]: since },
+        select: ["id", "parentId2", fieldName],
+      }, "items");
+      attempts.push({ method: "crm.item.list", filter: `>=${fieldName}`, ok: true, count: rows.length });
+      invoices.push(...rows);
+      if (rows.length) break;
+    } catch (error) {
+      attempts.push({ method: "crm.item.list", filter: `>=${fieldName}`, ok: false, error: error.message });
+    }
+  }
+  const dealIds = [...new Set(invoices.map((invoice) => Number(invoice.parentId2 || invoice.PARENT_ID_2)).filter(Boolean))];
+  return { since, invoiceCount: invoices.length, dealIds, attempts };
+}
+
+async function recalculateDealsInWindow() {
+  const days = normalizeWindowDays(autoRecalcWindowDays.value);
+  recentButton.disabled = true;
+  setAutomationProgress("Ищу счета в выбранном окне...", 10);
+  try {
+    const recent = await getRecentInvoiceDealIds(days);
+    automationTracked.textContent = String(recent.dealIds.length);
+    if (!recent.dealIds.length) {
+      setAutomationProgress("Сделок для пересчёта не найдено", 100, { tone: "warning" });
+      automationLastRun.textContent = formatLastRun(new Date().toISOString());
+      const report = { appVersion, ok: true, operation: "marketplace-window-recalculate", days, ...recent, dealCount: 0, results: [] };
+      write({ ...report, message: "Сделок за выбранный период нет. CSV-отчёт сформирован автоматически." }, { reveal: true });
+      downloadWindowReport(report);
+      return;
+    }
+
+    const results = [];
+    for (let index = 0; index < recent.dealIds.length; index += 1) {
+      const dealId = recent.dealIds[index];
+      const percent = Math.round(((index + 1) / recent.dealIds.length) * 86) + 10;
+      setAutomationProgress(`Пересчитываю сделку #${dealId}...`, Math.min(percent, 96));
+      try {
+        const result = await recalculate(dealId, true);
+        results.push({ dealId, ok: true, title: result.deal.TITLE || "", summary: result.summary, stageLookup: stageDiagnostics });
+      } catch (error) {
+        results.push({ dealId, ok: false, error: error.message });
+      }
+    }
+
+    const ok = results.every((result) => result.ok);
+    setAutomationProgress(ok ? "Пересчёт сделок завершён" : "Пересчёт завершён с ошибками", 100, { tone: ok ? "success" : "warning" });
+    automationLastRun.textContent = formatLastRun(new Date().toISOString());
+    const report = { appVersion, ok, operation: "marketplace-window-recalculate", days, ...recent, dealCount: recent.dealIds.length, results };
+    write({ ...report, message: "Пересчёт завершён. CSV-отчёт сформирован автоматически." }, { reveal: true });
+    downloadWindowReport(report);
+  } catch (error) {
+    setAutomationProgress("Ошибка пересчёта сделок", 100, { tone: "warning" });
+    write({ appVersion, ok: false, operation: "marketplace-window-recalculate", error: error.message }, { reveal: true });
+  } finally {
+    recentButton.disabled = false;
+  }
+}
+
 function dealIdFromContext() {
   const params = new URLSearchParams(window.location.search);
   const optionsText = params.get("PLACEMENT_OPTIONS") || params.get("placement_options") || "{}";
@@ -653,6 +866,34 @@ function downloadReport() {
   URL.revokeObjectURL(link.href);
 }
 
+function downloadWindowReport(report) {
+  const rows = [
+    ["Период", `последние ${report.days} суток`],
+    ["С", formatDateOnly(report.since)],
+    ["Сделок", report.dealCount],
+    [],
+    ["ID сделки", "Название", "Выставлено", "Оплачено", "Не оплачено", "Остаток", "Счетов", "В расчёте", "Ошибки", "Неразрешённые стадии"],
+    ...report.results.map((item) => [
+      item.dealId,
+      item.title || "",
+      item.summary?.issued ?? "",
+      item.summary?.paid ?? "",
+      item.summary?.unpaid ?? "",
+      item.summary?.remaining ?? "",
+      item.summary?.invoiceCount ?? "",
+      item.summary?.countedInvoiceCount ?? "",
+      item.error || "",
+      (item.stageLookup?.unresolved || []).join(", "),
+    ]),
+  ];
+  const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(";")).join("\r\n");
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" }));
+  link.download = `deal-invoice-window-${report.days}-days.csv`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
 async function initApp() {
   write("Загружаю настройки...");
   setMappingStatus("Проверяю настройки...");
@@ -660,6 +901,10 @@ async function initApp() {
   portal.textContent = portalHost ? `${portalHost} · Bitrix24 Marketplace` : "Bitrix24 Marketplace";
   
   const settings = await loadSettings();
+  serverSupport = await loadServerSupport();
+  renderServerSupport();
+  automationMode.value = settings.autoRecalcMode || "twiceDaily";
+  autoRecalcWindowDays.value = String(normalizeWindowDays(settings.autoRecalcWindowDays));
   const [fields, userFields] = await Promise.all([
     callMethod("crm.deal.fields"),
     callList("crm.deal.userfield.list"),
@@ -685,6 +930,8 @@ form.addEventListener("submit", async (event) => {
   try {
     const settings = Object.fromEntries(new FormData(form));
     settings.includeNegativeStages = form.includeNegativeStages.checked;
+    settings.autoRecalcMode = automationMode.value;
+    settings.autoRecalcWindowDays = normalizeWindowDays(autoRecalcWindowDays.value);
     await saveSettings(settings);
     let card = null;
     card = await configureDealCardSection(settings);
@@ -711,7 +958,7 @@ dealForm.addEventListener("submit", async (event) => {
     write(`Пересчитываю сделку #${dealId}...`, { reveal: true });
     const result = await recalculate(dealId, true);
     renderResult(dealId, result);
-    write({ appVersion, ok: true, message: "Поля сделки обновлены.", summary: result.summary }, { reveal: true });
+    write({ appVersion, ok: true, message: "Поля сделки обновлены.", summary: result.summary, stageLookup: stageDiagnostics }, { reveal: true });
   } catch (error) {
     write({ appVersion, ok: false, operation: "manual-recalculate", error: error.message }, { reveal: true });
   }
@@ -732,6 +979,15 @@ document.querySelector("#ensureFields").addEventListener("click", async () => {
 
 document.querySelector("#refresh").addEventListener("click", initApp);
 document.querySelector("#downloadReport").addEventListener("click", downloadReport);
+recentButton.addEventListener("click", recalculateDealsInWindow);
+automationMode.addEventListener("change", () => {
+  if (automationMode.value === "continuous" && !serverSupport.connected) showServerSupportModal();
+});
+closeServerSupportModal.addEventListener("click", hideServerSupportModal);
+requestServerSupport.addEventListener("click", requestServerSupportAction);
+serverSupportModal.addEventListener("click", (event) => {
+  if (event.target === serverSupportModal) hideServerSupportModal();
+});
 logToggle.addEventListener("click", () => setLogVisible(resultNode.hidden));
 dealUrlInput.addEventListener("input", () => {
   const dealId = dealIdFromText(dealUrlInput.value);

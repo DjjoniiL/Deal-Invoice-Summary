@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="style.css?v=layout-20260810-1">
+    <link rel="stylesheet" href="style.css?v=layout-20260810-7">
     <title>Калькулятор счетов</title>
     <script src="//api.bitrix24.com/api/v1/"></script>
   </head>
@@ -58,17 +58,23 @@
           <h2>Автопересчёт</h2>
           <div class="automation-list">
             <label>Режим расчёта
-              <select id="automationMode" disabled>
-                <option value="manual">Ручной режим</option>
+              <select id="automationMode">
+                <option value="twiceDaily">Утром и вечером</option>
+                <option value="continuous">Постоянный</option>
               </select>
             </label>
             <label>Окно пересчёта
-              <select id="autoRecalcWindowDays" disabled>
-                <option>При открытии</option>
+              <select id="autoRecalcWindowDays">
+                <option value="42">42 суток</option>
+                <option value="28">28 суток</option>
+                <option value="21" selected>21 сутки</option>
+                <option value="14">14 суток</option>
+                <option value="7">7 суток</option>
+                <option value="2">2 суток</option>
               </select>
             </label>
             <span>Интервал</span>
-            <strong id="automationInterval">сервер не используется</strong>
+            <strong id="automationInterval">ручной запуск по окну</strong>
             <span>Пробуждение</span>
             <strong id="automationWake">не требуется</strong>
             <span>Отслеживается сделок</span>
@@ -76,7 +82,19 @@
             <span>Последний запуск</span>
             <strong id="automationLastRun">Пока не запускался</strong>
           </div>
-          <button id="recent" type="button" disabled>Автопересчёт доступен в серверной версии</button>
+          <div id="automationProgress" class="automation-progress" hidden>
+            <div class="automation-progress-head">
+              <span id="automationProgressText">Готовлю пересчёт...</span>
+              <strong id="automationProgressValue">0%</strong>
+            </div>
+            <div class="automation-progress-track">
+              <span id="automationProgressBar"></span>
+            </div>
+          </div>
+          <div class="automation-actions">
+            <button id="serverStatusButton" type="button" disabled>Автопересчёт доступен в серверной версии</button>
+            <button id="recent" type="button">Сделать пересчёт всех сделок</button>
+          </div>
         </section>
       </section>
 
@@ -108,10 +126,20 @@
         </div>
       </section>
     </main>
+    <div id="serverSupportModal" class="modal-backdrop" hidden>
+      <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="serverSupportTitle">
+        <h2 id="serverSupportTitle">Нужна серверная поддержка</h2>
+        <p>Постоянный автопересчёт требует аренды сервера на платформе VibeCode. Если Вам это необходимо, напишите нам через кнопку «Обратиться».</p>
+        <div class="modal-actions">
+          <button id="closeServerSupportModal" type="button" class="secondary-button">Закрыть</button>
+          <button id="requestServerSupport" type="button">Заявка на серверную поддержку</button>
+        </div>
+      </section>
+    </div>
     <!-- Принудительное обновление версии -->
-    <script src="app.js?v=layout-20260810-1"></script>
+    <script src="app.js?v=layout-20260810-7"></script>
     <div style="font-size:10px;color:#999;text-align:center;margin-top:8px;">
-      Версия: layout-20260810-1
+      Версия: layout-20260810-7
     </div>
   </body>
 </html>

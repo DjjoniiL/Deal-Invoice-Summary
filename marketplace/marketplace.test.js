@@ -15,8 +15,8 @@ test("marketplace archive has static Bitrix24 entry files", () => {
   assert.match(installHtml, /install\.js/);
   assert.match(indexHtml, /style\.css/);
   assert.match(indexHtml, /app\.js/);
-  assert.match(indexHtml, /app\.js\?v=layout-20260810-1/);
-  assert.match(indexHtml, /style\.css\?v=layout-20260810-1/);
+  assert.match(indexHtml, /app\.js\?v=layout-20260810-7/);
+  assert.match(indexHtml, /style\.css\?v=layout-20260810-7/);
   assert.match(installHtml, /api\.bitrix24\.com\/api\/v1/);
   assert.match(indexHtml, /api\.bitrix24\.com\/api\/v1/);
 });
@@ -32,6 +32,9 @@ test("marketplace installer binds only the left menu and completes install", () 
   assert.match(installJs, /LEFT_MENU/);
   assert.doesNotMatch(installJs, /CRM_DEAL_DETAIL_TAB/);
   assert.match(installJs, /BX24\.installFinish/);
+  assert.match(installJs, /INSTALL_STEP_DELAY_MS = 4000/);
+  assert.match(installJs, /logNode\.textContent \+=/);
+  assert.match(installJs, /await wait\(INSTALL_STEP_DELAY_MS\)/);
 });
 
 test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () => {
@@ -53,7 +56,7 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
   assert.match(appJs, /function defaultDealCardLayout/);
   assert.match(appJs, /defaultFieldLabels/);
   assert.match(appJs, /if \(defaultLabel\) return defaultLabel/);
-  assert.match(appJs, /layout-20260810-1/);
+  assert.match(appJs, /layout-20260810-7/);
   assert.match(appJs, /operation: "manual-recalculate"/);
   assert.match(appJs, /operation: "ensure-fields"/);
   assert.match(appJs, /operation: "save-mapping"/);
@@ -66,9 +69,12 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
 test("marketplace report resolves invoice stages and assigned users", () => {
   assert.match(appJs, /crm\.item\.stage\.list/);
   assert.match(appJs, /crm\.status\.list/);
+  assert.match(appJs, /stageLookup: stageDiagnostics/);
+  assert.match(appJs, /STATUS_ID: stageId/);
   assert.match(appJs, /callList\("crm\.item\.stage\.list", \{ entityTypeId: 31 \}, "stages"\)/);
-  assert.match(appJs, /DYNAMIC_31_STAGE_/);
-  assert.match(appJs, /DT31_/);
+  assert.match(appJs, /SMART_INVOICE_STAGE_/);
+  assert.match(appJs, /DT31_\$\{match\[1\]\}:\$\{statusId\}/);
+  assert.match(appJs, /function statusStageCode/);
   assert.match(appJs, /function invoiceStageName/);
   assert.match(appJs, /function invoiceAssignedName/);
   assert.match(appJs, /String\(user\.ID \|\| user\.id\)/);
@@ -85,7 +91,27 @@ test("marketplace report formats invoice dates without time", () => {
 });
 
 test("marketplace automation panel keeps disabled server controls contained", () => {
+  assert.match(indexHtml, /Утром и вечером/);
+  assert.match(indexHtml, /Постоянный/);
+  assert.match(indexHtml, /Нужна серверная поддержка/);
+  assert.match(indexHtml, /Заявка на серверную поддержку/);
+  assert.match(indexHtml, /42 суток/);
+  assert.match(indexHtml, /Автопересчёт доступен в серверной версии/);
+  assert.match(indexHtml, /Сделать пересчёт всех сделок/);
+  assert.match(indexHtml, /id="automationProgress" class="automation-progress" hidden/);
+  assert.match(appJs, /marketplace-window-recalculate/);
+  assert.match(appJs, /function recalculateDealsInWindow/);
+  assert.match(appJs, /function downloadWindowReport/);
+  assert.match(appJs, /function loadServerSupport/);
+  assert.match(appJs, /dealInvoiceSummaryServerSupport/);
+  assert.match(appJs, /if \(serverSupport\.connected\) return/);
+  assert.match(appJs, /automationMode\.value === "continuous"/);
+  assert.match(appJs, /CSV-отчёт сформирован автоматически/);
+  assert.match(appJs, /deal-invoice-window-\$\{report\.days\}-days\.csv/);
+  assert.match(appJs, />=\$\{fieldName\}/);
   assert.match(styleCss, /\.automation-panel button\s*{[\s\S]*width:\s*100%/);
   assert.match(styleCss, /\.automation-panel button\s*{[\s\S]*white-space:\s*normal/);
   assert.match(styleCss, /\.automation-list strong\s*{[\s\S]*overflow-wrap:\s*anywhere/);
+  assert.match(styleCss, /\.automation-progress-track/);
+  assert.match(styleCss, /\.modal-backdrop/);
 });

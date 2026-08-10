@@ -1,9 +1,10 @@
 const statusNode = document.querySelector("#status");
 const installButton = document.querySelector("#installButton");
 const logNode = document.querySelector("#log");
+const INSTALL_STEP_DELAY_MS = 4000;
 
 // Можно добавить версию, если хотите
-const APP_VERSION = "layout-20260810-1"; // синхронизировать с app.js
+const APP_VERSION = "layout-20260810-7"; // синхронизировать с app.js
 
 function appUrl(fileName = "index.html") {
   const url = new URL(window.location.href);
@@ -30,7 +31,14 @@ function writeLog(value) {
   const timestamp = new Date().toLocaleString("ru-RU", { hour12: false });
   const prefix = `[${timestamp}] `;
   const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
-  logNode.textContent = prefix + text;
+  logNode.textContent += `${logNode.textContent ? "\n\n" : ""}${prefix}${text}`;
+  logNode.scrollTop = logNode.scrollHeight;
+}
+
+function wait(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 async function finishInstall() {
@@ -55,12 +63,14 @@ async function finishInstall() {
   } catch (error) {
     leftMenu = { ok: false, error: error.message };
     writeLog({ step: "left-menu", ok: false, error: error.message, message: "Ошибка регистрации левого меню" });
+    await wait(INSTALL_STEP_DELAY_MS);
     // Не прерываем установку – продолжим
   }
 
   // Шаг 2: завершение установки
   statusNode.textContent = "Завершаю установку...";
   writeLog({ step: "finish", message: "Вызываю BX24.installFinish()" });
+  await wait(INSTALL_STEP_DELAY_MS);
   try {
     BX24.installFinish();
     writeLog({ step: "finish", ok: true, message: "installFinish выполнен успешно" });

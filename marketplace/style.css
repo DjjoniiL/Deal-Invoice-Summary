@@ -191,6 +191,16 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.secondary-button {
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: #fff;
+}
+
+.secondary-button:hover {
+  background: #f5f7fb;
+}
+
 .icon-button {
   width: 38px;
   padding: 0;
@@ -246,6 +256,94 @@ button:disabled {
   width: 100%;
   white-space: normal;
   text-align: center;
+}
+
+.automation-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.automation-progress {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 12px;
+}
+
+.automation-progress[hidden] {
+  display: none;
+}
+
+.automation-progress-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.automation-progress-head strong {
+  color: var(--ink);
+}
+
+.automation-progress-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e6edf6;
+}
+
+.automation-progress-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), #1ea672);
+  transition: width .22s ease;
+}
+
+.automation-progress[data-tone="success"] .automation-progress-track span {
+  background: linear-gradient(90deg, #188b62, #23b47e);
+}
+
+.automation-progress[data-tone="warning"] .automation-progress-track span {
+  background: linear-gradient(90deg, #c97a00, #f2a51a);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(16, 24, 40, .42);
+}
+
+.modal-backdrop[hidden] {
+  display: none;
+}
+
+.modal-panel {
+  width: min(480px, 100%);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px;
+  background: #fff;
+  box-shadow: 0 22px 60px rgba(23, 32, 51, .2);
+}
+
+.modal-panel p {
+  margin-top: 8px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.modal-actions {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 8px;
+  margin-top: 16px;
 }
 
 .manual-form {
