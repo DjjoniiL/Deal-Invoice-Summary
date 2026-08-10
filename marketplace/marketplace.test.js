@@ -15,8 +15,8 @@ test("marketplace archive has static Bitrix24 entry files", () => {
   assert.match(installHtml, /install\.js/);
   assert.match(indexHtml, /style\.css/);
   assert.match(indexHtml, /app\.js/);
-  assert.match(indexHtml, /app\.js\?v=layout-20260810-10/);
-  assert.match(indexHtml, /style\.css\?v=layout-20260810-10/);
+  assert.match(indexHtml, /app\.js\?v=layout-20260810-11/);
+  assert.match(indexHtml, /style\.css\?v=layout-20260810-11/);
   assert.match(installHtml, /api\.bitrix24\.com\/api\/v1/);
   assert.match(indexHtml, /api\.bitrix24\.com\/api\/v1/);
 });
@@ -56,7 +56,7 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
   assert.match(appJs, /function defaultDealCardLayout/);
   assert.match(appJs, /defaultFieldLabels/);
   assert.match(appJs, /if \(defaultLabel\) return defaultLabel/);
-  assert.match(appJs, /layout-20260810-10/);
+  assert.match(appJs, /layout-20260810-11/);
   assert.match(appJs, /operation: "manual-recalculate"/);
   assert.match(appJs, /operation: "ensure-fields"/);
   assert.match(appJs, /operation: "save-mapping"/);
@@ -98,11 +98,11 @@ test("marketplace automation panel keeps disabled server controls contained", ()
   assert.match(indexHtml, /Постоянный/);
   assert.match(indexHtml, /Нужна серверная поддержка/);
   assert.match(indexHtml, /id="automationSchedule"/);
-  assert.match(appJs, /каждые 2 часа с 8:30 до 20:30/);
-  assert.match(appJs, /08:30, 10:30, 12:30, 14:30, 16:30, 18:30, 20:30/);
-  assert.match(appJs, /1 час 45 минут/);
-  assert.match(appJs, /164,2 Ꝟ за 30 рабочих дней/);
-  assert.match(appJs, /139,8 Ꝟ за 30 рабочих дней/);
+  assert.match(appJs, /каждый час с 8:30 до 20:30/);
+  assert.match(appJs, /08:30, 09:30, 10:30, 11:30, 12:30, 13:30, 14:30, 15:30, 16:30, 17:30, 18:30, 19:30, 20:30/);
+  assert.match(appJs, /3 часа 15 минут/);
+  assert.match(appJs, /до 200 Ꝟ за 30 рабочих дней/);
+  assert.match(appJs, /до 145 Ꝟ за 30 рабочих дней/);
   assert.match(appJs, /За сутки время работы сервера составит 30 минут/);
   assert.match(indexHtml, /Заявка на серверную версию/);
   assert.match(indexHtml, /windowReportModal/);
