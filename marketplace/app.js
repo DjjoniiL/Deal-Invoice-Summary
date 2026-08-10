@@ -5,7 +5,7 @@ const defaultSettings = {
   unpaidField: "UF_CRM_INV_SUM_UNPAID",
   remainingField: "UF_CRM_INV_SUM_REMAINING",
 };
-const appVersion = "layout-20260807-1";
+const appVersion = "layout-20260807-7";
 const dealSummarySectionName = "deal_invoice_summary";
 const dealSummarySectionTitle = "Расчёт оплаты счетов";
 const defaultFieldLabels = new Map([
@@ -35,6 +35,8 @@ const totalNodes = {
 };
 let currentReport = null;
 let portalHost = "";
+let stageMap = new Map();
+let userMap = new Map();
 
 console.info(`Deal Invoice Summary Marketplace ${appVersion}`);
 
@@ -67,11 +69,19 @@ async function callList(method, params = {}, key = null) {
   let start = 0;
   do {
     const response = await callMethod(method, { ...params, start });
-    const data = key ? response[key] : response;
-    rows.push(...(Array.isArray(data) ? data : []));
+    rows.push(...listRows(response, key));
     start = response.next ?? 0;
   } while (start);
   return rows;
+}
+
+function listRows(response, key = null) {
+  const data = key
+    ? response?.[key] ?? response?.result?.[key]
+    : response;
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === "object") return Object.values(data).filter((item) => item && typeof item === "object");
+  return [];
 }
 
 function money(value) {
@@ -92,8 +102,8 @@ function summarize(deal, invoices, settings) {
   let unpaid = 0;
   let skippedNegative = 0;
   for (const invoice of invoices) {
-    const amount = money(invoice.opportunity || invoice.OPPORTUNITY);
-    const semantic = statusSemantic(invoice.stageId || invoice.STAGE_ID);
+    const amount = money(invoiceAmount(invoice));
+    const semantic = statusSemantic(invoiceStageId(invoice));
     if (semantic === "F" && !settings.includeNegativeStages) {
       skippedNegative += 1;
       continue;
@@ -178,7 +188,7 @@ function mergeDealSummarySection(layout, fieldNames) {
     name: dealSummarySectionName,
     title: dealSummarySectionTitle,
     type: "section",
-    elements: uniqueFieldNames.map((name) => ({ name, optionFlags: 0 })),
+    elements: uniqueFieldNames.map((name) => ({ name, optionFlags: 1 })),
   });
 
   return cleanedSections;
@@ -232,16 +242,36 @@ async function configureDealCardSection(settings) {
 
   for (const category of categories) {
     for (const method of methods) {
+      const extras = { dealCategoryId: category.id };
+      let current = null;
+      let createdFromDefaultLayout = false;
+
       try {
-        const extras = { dealCategoryId: category.id };
         const response = await callMethod(method.get, { ...method.baseParams, scope: "C", extras });
-        const current = response?.data || response;
+        current = response?.data || response;
+      } catch (error) {
+        if (isEmptyCardLayoutError(error)) {
+          createdFromDefaultLayout = true;
+        } else {
+          attempts.push({ method: method.get, scope: "C", categoryId: category.id, categoryName: category.name, ok: false, error: error.message });
+          continue;
+        }
+      }
+
+      try {
         const data = mergeDealSummarySection(current, fieldNames);
         await callMethod(method.set, { ...method.baseParams, scope: "C", extras, data });
-        attempts.push({ method: method.set, scope: "C", categoryId: category.id, categoryName: category.name, ok: true });
+        attempts.push({
+          method: method.set,
+          scope: "C",
+          categoryId: category.id,
+          categoryName: category.name,
+          ok: true,
+          createdFromDefaultLayout,
+        });
         break;
       } catch (error) {
-        attempts.push({ method: method.set, scope: "C", categoryId: category.id, categoryName: category.name, ok: false, error: error.message });
+        attempts.push({ method: method.set, scope: "C", categoryId: category.id, categoryName: category.name, ok: false, createdFromDefaultLayout, error: error.message });
       }
     }
   }
@@ -262,6 +292,10 @@ async function configureDealCardSection(settings) {
   return { ok: false, attempts, error: "Could not update deal card layout for any accessible deal funnel" };
 }
 
+function isEmptyCardLayoutError(error) {
+  return /card layout is empty/i.test(error?.message || "");
+}
+
 async function dealCategories() {
   try {
     const response = await callMethod("crm.category.list", { entityTypeId: 2 });
@@ -276,6 +310,84 @@ async function dealCategories() {
   } catch (error) {
     return [{ id: 0, name: `Основная (${error.message})` }];
   }
+}
+
+async function loadInvoiceStages() {
+  try {
+    const stages = await callList("crm.item.stage.list", { entityTypeId: 31 }, "stages");
+    stageMap = new Map(
+      stages
+        .map((stage) => [stageCode(stage), stageTitle(stage)])
+        .filter(([code, title]) => code && title),
+    );
+  } catch (error) {
+    // Если не удалось загрузить стадии, останутся коды.
+    stageMap = new Map();
+    console.warn("Не удалось загрузить стадии счетов:", error.message);
+  }
+}
+
+async function loadUsers(userIds = []) {
+  try {
+    const ids = [...new Set(userIds.map((id) => Number(id)).filter(Boolean))];
+    const params = ids.length ? { filter: { ID: ids } } : {};
+    const users = await callList("user.get", params);
+    userMap = new Map(
+      users
+        .map((user) => [String(user.ID || user.id), userDisplayName(user)])
+        .filter(([id, name]) => id && name),
+    );
+  } catch (error) {
+    // Если не удалось загрузить пользователей, останутся ID.
+    userMap = new Map();
+    console.warn("Не удалось загрузить пользователей:", error.message);
+  }
+}
+
+function stageCode(stage) {
+  return String(stage?.id || stage?.ID || stage?.statusId || stage?.STATUS_ID || "").trim();
+}
+
+function stageTitle(stage) {
+  return String(stage?.name || stage?.NAME || stage?.title || stage?.TITLE || "").trim();
+}
+
+function userDisplayName(user) {
+  return [
+    user.LAST_NAME || user.lastName,
+    user.NAME || user.name,
+    user.SECOND_NAME || user.secondName,
+  ].filter(Boolean).join(" ") || user.EMAIL || user.email || user.LOGIN || user.login || "";
+}
+
+function invoiceStageId(invoice) {
+  return String(invoice.stageId || invoice.STAGE_ID || invoice.stage_id || "").trim();
+}
+
+function invoiceStageName(invoice) {
+  const id = invoiceStageId(invoice);
+  return stageMap.get(id) || id || "Без стадии";
+}
+
+function invoiceAssignedById(invoice) {
+  return String(invoice.assignedById || invoice.ASSIGNED_BY_ID || invoice.assigned_by_id || "").trim();
+}
+
+function invoiceAssignedName(invoice) {
+  const id = invoiceAssignedById(invoice);
+  return userMap.get(id) || (id ? `ID ${id}` : "");
+}
+
+function invoiceAmount(invoice) {
+  return invoice.opportunity ?? invoice.OPPORTUNITY ?? invoice.amount ?? invoice.PRICE ?? 0;
+}
+
+function invoiceIssuedAt(invoice) {
+  return invoice.begindate || invoice.BEGINDATE || invoice.beginDate || invoice.createdTime || invoice.CREATED_TIME || "";
+}
+
+function invoiceDeadline(invoice) {
+  return invoice.closedate || invoice.CLOSEDATE || invoice.closeDate || "";
 }
 
 function fieldLabel(field, userFieldLabels) {
@@ -339,6 +451,7 @@ async function ensureFields() {
         ERROR_MESSAGE: "",
         HELP_MESSAGE: "",
         EDIT_IN_LIST: "N",
+        SHOW_IN_CARD: "Y",
     };
     const updateFields = {
       EDIT_FORM_LABEL: label,
@@ -347,6 +460,7 @@ async function ensureFields() {
       ERROR_MESSAGE: "",
       HELP_MESSAGE: "",
       EDIT_IN_LIST: "N",
+      SHOW_IN_CARD: "Y",
     };
     const existingField = byName.get(fieldName);
     if (existingField?.ID) await callMethod("crm.deal.userfield.update", { id: existingField.ID, fields: updateFields });
@@ -360,7 +474,16 @@ async function getInvoices(dealId) {
   const response = await callMethod("crm.item.list", {
     entityTypeId: 31,
     filter: { parentId2: Number(dealId) },
-    select: ["id", "title", "opportunity", "stageId", "accountNumber", "begindate"],
+      select: [
+     	"id",
+      	"title",
+      	"opportunity",
+      	"stageId",
+      	"accountNumber",
+      	"begindate",          // дата выставления
+      	"closedate",          // срок оплаты 
+      	"assignedById",       // ответственный (ID пользователя)
+    ],
   });
   return response.items || response.result?.items || [];
 }
@@ -394,6 +517,10 @@ async function recalculate(dealId, write = true) {
     callMethod("crm.deal.get", { id: Number(dealId) }),
     getInvoices(dealId),
   ]);
+  await Promise.all([
+    loadInvoiceStages(),
+    loadUsers(invoices.map(invoiceAssignedById)),
+  ]);
   const summary = summarize(deal, invoices, settings);
   if (write) {
     const fields = {};
@@ -415,21 +542,55 @@ function renderResult(dealId, result) {
   dealTitle.textContent = `Сделка #${dealId}: ${result.deal.TITLE || "без названия"}`;
   for (const [key, node] of Object.entries(totalNodes)) node.textContent = moneyFormat.format(result.summary[key]);
   invoiceList.replaceChildren();
+
+  // Заголовки (можно добавить в HTML или создать прямо здесь)
+  const headerRow = document.createElement("div");
+  headerRow.className = "invoice-header";
+  headerRow.innerHTML = `
+    <span>Счёт</span>
+    <span>Стадия</span>
+    <span>Сумма</span>
+    <span>Дата выставления</span>
+    <span>Срок оплаты</span>
+    <span>Ответственный</span>
+  `;
+  invoiceList.append(headerRow);
+
   for (const invoice of result.invoices) {
     const row = document.createElement("div");
     row.className = "invoice-row";
+
+    // Название счета
     const title = document.createElement("a");
     title.href = portalHost ? `https://${portalHost}/crm/type/31/details/${invoice.id}/` : `/crm/type/31/details/${invoice.id}/`;
     title.target = "_blank";
     title.rel = "noopener";
     title.textContent = invoice.accountNumber ? `Счёт № ${invoice.accountNumber}` : invoice.title || `Счёт #${invoice.id}`;
+    
+    // Стадия (читаемое название)
     const stage = document.createElement("span");
-    stage.textContent = invoice.stageId || "Без стадии";
+    stage.textContent = invoiceStageName(invoice);
+
+    // Сумма
     const amount = document.createElement("strong");
-    amount.textContent = moneyFormat.format(invoice.opportunity || 0);
-    row.append(title, stage, amount);
+    amount.textContent = moneyFormat.format(invoiceAmount(invoice));
+
+    // Дата выставления
+    const dateIssued = document.createElement("span");
+    dateIssued.textContent = invoiceIssuedAt(invoice);
+
+    // Срок оплаты
+    const datePay = document.createElement("span");
+    datePay.textContent = invoiceDeadline(invoice);
+
+    // Ответственный
+    const assignee = document.createElement("span");
+    assignee.textContent = invoiceAssignedName(invoice);
+
+    row.append(title, stage, amount, dateIssued, datePay, assignee);
     invoiceList.append(row);
   }
+
   if (!result.invoices.length) invoiceList.textContent = "По сделке пока нет счетов.";
   currentReport = { dealId, ...result };
 }
@@ -443,8 +604,16 @@ function downloadReport() {
     ["Не оплачено", currentReport.summary.unpaid],
     ["Остаток", currentReport.summary.remaining],
     [],
-    ["ID счета", "Название", "Стадия", "Сумма"],
-    ...currentReport.invoices.map((invoice) => [invoice.id, invoice.title, invoice.stageId, invoice.opportunity]),
+    ["ID счета", "Название", "Стадия", "Сумма", "Дата выставления", "Срок оплаты", "Ответственный"],
+    ...currentReport.invoices.map((invoice) => [
+      invoice.id,
+      invoice.title,
+      invoiceStageName(invoice),
+      invoiceAmount(invoice),
+      invoiceIssuedAt(invoice),
+      invoiceDeadline(invoice),
+      invoiceAssignedName(invoice)
+    ]),
   ];
   const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(";")).join("\r\n");
   const link = document.createElement("a");
@@ -459,6 +628,7 @@ async function initApp() {
   setMappingStatus("Проверяю настройки...");
   portalHost = window.BX24?.getDomain?.() || "";
   portal.textContent = portalHost ? `${portalHost} · Bitrix24 Marketplace` : "Bitrix24 Marketplace";
+  
   const settings = await loadSettings();
   const [fields, userFields] = await Promise.all([
     callMethod("crm.deal.fields"),
@@ -468,6 +638,7 @@ async function initApp() {
   form.includeNegativeStages.checked = Boolean(settings.includeNegativeStages);
   setMappingStatus("Сопоставление готово.", "success");
   write("Настройки загружены.");
+
   const contextDealId = dealIdFromContext();
   if (contextDealId) {
     dealIdInput.value = contextDealId;

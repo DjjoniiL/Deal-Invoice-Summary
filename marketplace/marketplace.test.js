@@ -6,6 +6,7 @@ const installHtml = await readFile(new URL("./install.html", import.meta.url), "
 const installJs = await readFile(new URL("./install.js", import.meta.url), "utf8");
 const indexHtml = await readFile(new URL("./index.html", import.meta.url), "utf8");
 const appJs = await readFile(new URL("./app.js", import.meta.url), "utf8");
+const styleCss = await readFile(new URL("./style.css", import.meta.url), "utf8");
 const marketplaceFiles = await readdir(new URL(".", import.meta.url));
 const expectedMarketplaceFiles = ["app.js", "index.html", "install.css", "install.html", "install.js", "marketplace.test.js", "style.css"];
 
@@ -14,8 +15,8 @@ test("marketplace archive has static Bitrix24 entry files", () => {
   assert.match(installHtml, /install\.js/);
   assert.match(indexHtml, /style\.css/);
   assert.match(indexHtml, /app\.js/);
-  assert.match(indexHtml, /app\.js\?v=layout-20260807-1/);
-  assert.match(indexHtml, /style\.css\?v=layout-20260807-1/);
+  assert.match(indexHtml, /app\.js\?v=layout-20260807-7/);
+  assert.match(indexHtml, /style\.css\?v=layout-20260807-7/);
   assert.match(installHtml, /api\.bitrix24\.com\/api\/v1/);
   assert.match(indexHtml, /api\.bitrix24\.com\/api\/v1/);
 });
@@ -46,11 +47,13 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
   assert.match(appJs, /crm\.category\.list/);
   assert.match(appJs, /dealCategoryId/);
   assert.match(appJs, /updatedCategories/);
+  assert.match(appJs, /isEmptyCardLayoutError/);
+  assert.match(appJs, /createdFromDefaultLayout/);
   assert.match(appJs, /deal_invoice_summary/);
   assert.match(appJs, /function defaultDealCardLayout/);
   assert.match(appJs, /defaultFieldLabels/);
   assert.match(appJs, /if \(defaultLabel\) return defaultLabel/);
-  assert.match(appJs, /layout-20260807-1/);
+  assert.match(appJs, /layout-20260807-7/);
   assert.match(appJs, /operation: "manual-recalculate"/);
   assert.match(appJs, /operation: "ensure-fields"/);
   assert.match(appJs, /operation: "save-mapping"/);
@@ -58,4 +61,21 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
   assert.match(appJs, /Сумма выставленных счетов/);
   assert.doesNotMatch(appJs, /vibecode\.bitrix24\.tech/);
   assert.doesNotMatch(appJs, /\/api\/recalculate/);
+});
+
+test("marketplace report resolves invoice stages and assigned users", () => {
+  assert.match(appJs, /crm\.item\.stage\.list/);
+  assert.match(appJs, /callList\("crm\.item\.stage\.list", \{ entityTypeId: 31 \}, "stages"\)/);
+  assert.match(appJs, /function invoiceStageName/);
+  assert.match(appJs, /function invoiceAssignedName/);
+  assert.match(appJs, /String\(user\.ID \|\| user\.id\)/);
+  assert.match(appJs, /loadUsers\(invoices\.map\(invoiceAssignedById\)\)/);
+  assert.match(appJs, /invoiceStageName\(invoice\)/);
+  assert.match(appJs, /invoiceAssignedName\(invoice\)/);
+});
+
+test("marketplace automation panel keeps disabled server controls contained", () => {
+  assert.match(styleCss, /\.automation-panel button\s*{[\s\S]*width:\s*100%/);
+  assert.match(styleCss, /\.automation-panel button\s*{[\s\S]*white-space:\s*normal/);
+  assert.match(styleCss, /\.automation-list strong\s*{[\s\S]*overflow-wrap:\s*anywhere/);
 });

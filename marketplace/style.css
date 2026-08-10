@@ -136,6 +136,7 @@ p {
 .setup-panel,
 .automation-panel {
   align-content: start;
+  min-width: 0;
 }
 
 .field-grid {
@@ -218,7 +219,7 @@ button:disabled {
 
 .automation-list {
   display: grid;
-  grid-template-columns: minmax(120px, .7fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, .9fr) minmax(0, 1fr);
   gap: 7px 10px;
   color: var(--muted);
   font-size: 13px;
@@ -226,6 +227,7 @@ button:disabled {
 
 .automation-list label {
   gap: 4px;
+  min-width: 0;
 }
 
 .automation-list label:first-child,
@@ -236,6 +238,14 @@ button:disabled {
 .automation-list strong {
   color: var(--ink);
   font-size: 13px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.automation-panel button {
+  width: 100%;
+  white-space: normal;
+  text-align: center;
 }
 
 .manual-form {
@@ -343,9 +353,18 @@ pre {
   gap: 0;
 }
 
+/* Стили для таблицы счетов с 6 колонками */
+.invoice-header {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr;
+  font-weight: bold;
+  border-bottom: 1px solid #ccc;
+  padding: 5px 0;
+}
+
 .invoice-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1.3fr) minmax(120px, .7fr) minmax(110px, .6fr);
+  grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr;
   align-items: center;
   gap: 14px;
   min-height: 42px;
@@ -367,10 +386,11 @@ pre {
 }
 
 .invoice-row strong {
-  justify-self: end;
+  justify-self: start;
   font-size: 15px;
 }
 
+/* Медиа-запрос для мобильных устройств */
 @media (max-width: 780px) {
   .shell {
     width: min(100vw - 20px, 720px);
@@ -396,9 +416,19 @@ pre {
 
   .field-grid,
   .automation-list,
-  .metric-grid,
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Для мобильных делаем таблицу в одну колонку */
+  .invoice-header,
   .invoice-row {
     grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .invoice-row {
+    padding: 8px 0;
   }
 
   button {
