@@ -5,7 +5,7 @@ const defaultSettings = {
   unpaidField: "UF_CRM_INV_SUM_UNPAID",
   remainingField: "UF_CRM_INV_SUM_REMAINING",
 };
-const appVersion = "layout-20260810-11";
+const appVersion = "layout-20260810-12";
 const dealSummarySectionName = "deal_invoice_summary";
 const dealSummarySectionTitle = "Расчёт оплаты счетов";
 const defaultFieldLabels = new Map([
@@ -80,8 +80,8 @@ function setMappingStatus(text, tone = "neutral") {
 }
 
 const serverSupportModeDetails = {
-  continuous: 'Режим "Постоянный" - сервер будет просыпаться каждый час с 8:30 до 20:30, с таймером сна в 15 мин после пробуждения. Интервал пересчёта - дважды после пробуждения, т.е. каждые 7 мин. Расписание: 08:30, 09:30, 10:30, 11:30, 12:30, 13:30, 14:30, 15:30, 16:30, 17:30, 18:30, 19:30, 20:30. За сутки время работы сервера составит 3 часа 15 минут. Для micro-сервера это до 200 Ꝟ за 30 рабочих дней.',
-  twiceDaily: 'Режим "Утром и вечером" - сервер будет включаться в заданное время утром и вечером, всего два раза в сутки, с таймером сна в 15 мин после каждого пробуждения. Интервал пересчёта - дважды после пробуждения, т.е. каждые 7 мин. Расписание: 09:44, 18:44. За сутки время работы сервера составит 30 минут. Для micro-сервера это до 145 Ꝟ за 30 рабочих дней.',
+  continuous: "Режим «Постоянный»: сервер просыпается каждый час с 8:30 до 20:30, работает по 15 мин, с двойным пересчётом каждые 7 мин. Итого 3 ч 15 мин/сутки, до 200 руб/мес за 30 рабочих дней.",
+  twiceDaily: "Режим «Утром и вечером»: сервер включается в 09:44 и 18:44, работает по 15 мин, с двойным пересчётом каждые 7 мин. Итого 30 мин/сутки, до 145 руб/мес за 30 рабочих дней.",
 };
 
 const automationModeView = {
@@ -96,7 +96,7 @@ const automationModeView = {
     wake: "2 раза в сутки",
   },
   continuous: {
-    schedule: "08:30, 09:30, 10:30, 11:30, 12:30, 13:30, 14:30, 15:30, 16:30, 17:30, 18:30, 19:30, 20:30",
+    schedule: "Каждый час с 9:00 до 20:00",
     interval: "дважды после пробуждения, каждые 7 мин",
     wake: "каждый час",
   },
@@ -290,7 +290,7 @@ async function loadServerSupport() {
 function renderServerSupport() {
   serverStatusButton.textContent = serverSupport.connected
     ? "Серверная поддержка подключена"
-    : "Автопересчёт доступен в серверной версии";
+    : "Автопересчёт доступен с сервером";
   document.querySelectorAll(".server-only").forEach((node) => {
     node.hidden = !serverSupport.connected;
   });
@@ -515,27 +515,32 @@ async function loadInvoiceStages(stageIds = []) {
 }
 
 async function loadInvoiceStatusStages(stageIds = [], attempts = []) {
-  const entityIds = [...new Set(stageIds.map(invoiceStageEntityId).filter(Boolean))];
+  const entityRequests = [...new Map(
+    stageIds
+      .flatMap((stageId) => invoiceStageEntityIds(stageId).map((entityId) => [`${stagePrefix(stageId)}|${entityId}`, { prefix: stagePrefix(stageId), entityId }]))
+      .filter(([, request]) => request.prefix && request.entityId),
+  ).values()];
   const stages = [];
-  for (const entityId of entityIds) {
+  for (const { prefix, entityId } of entityRequests) {
     try {
       const rows = await callList("crm.status.list", { order: { SORT: "ASC" }, filter: { ENTITY_ID: entityId } });
       attempts.push({ method: "crm.status.list", filter: { ENTITY_ID: entityId }, ok: true, count: rows.length });
-      stages.push(...rows);
+      stages.push(...rows.map((row) => ({ ...row, __stagePrefix: prefix })));
     } catch (error) {
       attempts.push({ method: "crm.status.list", filter: { ENTITY_ID: entityId }, ok: false, error: error.message });
     }
   }
 
   for (const stageId of stageIds) {
-    const entityId = invoiceStageEntityId(stageId);
-    if (!entityId) continue;
-    try {
-      const rows = await callList("crm.status.list", { filter: { ENTITY_ID: entityId, STATUS_ID: stageId } });
-      attempts.push({ method: "crm.status.list", filter: { ENTITY_ID: entityId, STATUS_ID: stageId }, ok: true, count: rows.length });
-      stages.push(...rows);
-    } catch (error) {
-      attempts.push({ method: "crm.status.list", filter: { ENTITY_ID: entityId, STATUS_ID: stageId }, ok: false, error: error.message });
+    const prefix = stagePrefix(stageId);
+    for (const entityId of invoiceStageEntityIds(stageId)) {
+      try {
+        const rows = await callList("crm.status.list", { filter: { ENTITY_ID: entityId, STATUS_ID: stageId } });
+        attempts.push({ method: "crm.status.list", filter: { ENTITY_ID: entityId, STATUS_ID: stageId }, ok: true, count: rows.length });
+        stages.push(...rows.map((row) => ({ ...row, __stagePrefix: prefix })));
+      } catch (error) {
+        attempts.push({ method: "crm.status.list", filter: { ENTITY_ID: entityId, STATUS_ID: stageId }, ok: false, error: error.message });
+      }
     }
   }
 
@@ -571,11 +576,12 @@ async function loadInvoiceStatusStagesFromTypes(stageIds = [], attempts = []) {
     const stages = [];
     for (const type of matchedTypes) {
       const entityId = String(type.ID || type.id || "").trim();
+      const prefix = String(type.PREFIX || type.prefix || "").trim();
       if (!entityId) continue;
       try {
         const rows = await callList("crm.status.list", { order: { SORT: "ASC" }, filter: { ENTITY_ID: entityId } });
         attempts.push({ method: "crm.status.list", source: "entity.types", filter: { ENTITY_ID: entityId }, ok: true, count: rows.length });
-        stages.push(...rows);
+        stages.push(...rows.map((row) => ({ ...row, __stagePrefix: prefix })));
       } catch (error) {
         attempts.push({ method: "crm.status.list", source: "entity.types", filter: { ENTITY_ID: entityId }, ok: false, error: error.message });
       }
@@ -615,6 +621,8 @@ function stageCodes(stage) {
 function statusStageCode(stage) {
   const entityId = String(stage?.entityId || stage?.ENTITY_ID || "").trim();
   const statusId = String(stage?.statusId || stage?.STATUS_ID || stage?.id || stage?.ID || "").trim();
+  const prefix = String(stage?.__stagePrefix || "").trim();
+  if (prefix && statusId && !statusId.includes(":")) return `${prefix}:${statusId}`;
   const match = entityId.match(/^(?:DYNAMIC_31_STAGE|SMART_INVOICE_STAGE)_(\d+)$/i);
   return match && statusId && !statusId.includes(":") ? `DT31_${match[1]}:${statusId}` : "";
 }
@@ -635,9 +643,16 @@ function invoiceStageId(invoice) {
   return String(invoice.stageId || invoice.STAGE_ID || invoice.stage_id || "").trim();
 }
 
-function invoiceStageEntityId(stageId) {
+function stagePrefix(stageId) {
   const match = String(stageId || "").match(/^DT31_(\d+):/i);
-  return match ? `SMART_INVOICE_STAGE_${match[1]}` : "";
+  return match ? `DT31_${match[1]}` : "";
+}
+
+function invoiceStageEntityIds(stageId) {
+  const match = String(stageId || "").match(/^DT31_(\d+):/i);
+  return match
+    ? [`SMART_INVOICE_STAGE_${match[1]}`, `DYNAMIC_31_STAGE_${match[1]}`, "SMART_INVOICE_STAGE", "DYNAMIC_31_STAGE"]
+    : [];
 }
 
 function invoiceStageName(invoice) {

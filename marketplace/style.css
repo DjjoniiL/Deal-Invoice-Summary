@@ -345,6 +345,12 @@ button:disabled {
   line-height: 1.45;
 }
 
+#serverSupportDetails {
+  margin-top: 16px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 13px;
+}
+
 .modal-actions {
   display: grid;
   grid-template-columns: 1fr 1.4fr;
