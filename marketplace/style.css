@@ -134,7 +134,7 @@ p {
 
 .setup-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(300px, .65fr);
+  grid-template-columns: minmax(0, 1.15fr) minmax(360px, .85fr);
   gap: 12px;
   margin-bottom: 8px;
 }
@@ -235,7 +235,7 @@ button:disabled {
 
 .automation-list {
   display: grid;
-  grid-template-columns: minmax(0, .9fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, .72fr) minmax(0, 1.18fr);
   gap: 7px 10px;
   color: var(--muted);
   font-size: 13px;
@@ -347,8 +347,7 @@ button:disabled {
 
 #serverSupportDetails {
   margin-top: 16px;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 13px;
+  white-space: pre-line;
 }
 
 .modal-actions {
