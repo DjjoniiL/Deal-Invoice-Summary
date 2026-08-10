@@ -4,8 +4,9 @@ const defaultSettings = {
   paidField: "UF_CRM_INV_SUM_PAID",
   unpaidField: "UF_CRM_INV_SUM_UNPAID",
   remainingField: "UF_CRM_INV_SUM_REMAINING",
+  autoRecalcWindowDays: 21,
 };
-const appVersion = "layout-20260810-13";
+const appVersion = "layout-20260810-14";
 const dealSummarySectionName = "deal_invoice_summary";
 const dealSummarySectionTitle = "Расчёт оплаты счетов";
 const defaultFieldLabels = new Map([
@@ -81,7 +82,7 @@ function setMappingStatus(text, tone = "neutral") {
 
 const serverSupportModeDetails = {
   continuous: "Режим «Постоянный»: сервер просыпается каждый час с 8:30 до 20:30, работает по 15 мин, с двойным пересчётом каждые 7 мин.\nИтого 3 ч 15 мин/сутки, до 200 руб/мес за 30 рабочих дней.",
-  twiceDaily: "Режим «Утром и вечером»: сервер включается в 09:44 и 18:44, работает по 15 мин, с двойным пересчётом каждые 7 мин.\nИтого 30 мин/сутки, до 145 руб/мес за 30 рабочих дней.",
+  twiceDaily: "Режим «Утром и вечером»: сервер включается в 09:45 и 18:45, работает по 15 мин, с двойным пересчётом каждые 7 мин.\nИтого 30 мин/сутки, до 145 руб/мес за 30 рабочих дней.",
 };
 
 const automationModeView = {
@@ -91,7 +92,7 @@ const automationModeView = {
     wake: "не требуется",
   },
   twiceDaily: {
-    schedule: "09:44, 18:44",
+    schedule: "в 9:45 утра И в 18:45 вечера",
     interval: "дважды после пробуждения, каждые 7 мин",
     wake: "2 раза в сутки",
   },

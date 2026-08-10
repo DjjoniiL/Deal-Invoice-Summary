@@ -331,7 +331,7 @@ button:disabled {
 }
 
 .modal-panel {
-  width: min(480px, 100%);
+  width: min(640px, 100%);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 18px;
