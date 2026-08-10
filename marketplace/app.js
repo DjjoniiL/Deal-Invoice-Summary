@@ -5,7 +5,7 @@ const defaultSettings = {
   unpaidField: "UF_CRM_INV_SUM_UNPAID",
   remainingField: "UF_CRM_INV_SUM_REMAINING",
 };
-const appVersion = "layout-20260810-8";
+const appVersion = "layout-20260810-9";
 const dealSummarySectionName = "deal_invoice_summary";
 const dealSummarySectionTitle = "Расчёт оплаты счетов";
 const defaultFieldLabels = new Map([
@@ -31,6 +31,7 @@ const automationMode = document.querySelector("#automationMode");
 const autoRecalcWindowDays = document.querySelector("#autoRecalcWindowDays");
 const automationTracked = document.querySelector("#automationTracked");
 const automationLastRun = document.querySelector("#automationLastRun");
+const automationSchedule = document.querySelector("#automationSchedule");
 const automationProgress = document.querySelector("#automationProgress");
 const automationProgressText = document.querySelector("#automationProgressText");
 const automationProgressValue = document.querySelector("#automationProgressValue");
@@ -79,9 +80,34 @@ function setMappingStatus(text, tone = "neutral") {
 }
 
 const serverSupportModeDetails = {
-  continuous: 'Режим "Постоянный" - сервер будет просыпаться каждые 2 часа с 8 утра до 19:00, с таймером сна в 15 мин после пробуждения. Интервал пересчёта - дважды после пробуждения, т.е. каждые 7 мин. За сутки время работы сервера составит 1 час 30 минут.',
+  continuous: 'Режим "Постоянный" - сервер будет просыпаться каждые 2 часа с 8:30 до 20:30, с таймером сна в 15 мин после пробуждения. Интервал пересчёта - дважды после пробуждения, т.е. каждые 7 мин. Расписание: 08:30, 10:30, 12:30, 14:30, 16:30, 18:30, 20:30. За сутки время работы сервера составит 1 час 45 минут.',
   twiceDaily: 'Режим "Утром и вечером" - сервер будет включаться в заданное время утром и вечером, всего два раза в сутки, с таймером сна в 15 мин после каждого пробуждения. Интервал пересчёта - дважды после пробуждения, т.е. каждые 7 мин. За сутки время работы сервера составит 30 минут.',
 };
+
+const automationModeView = {
+  manual: {
+    schedule: "по кнопке",
+    interval: "ручной запуск по окну",
+    wake: "не требуется",
+  },
+  twiceDaily: {
+    schedule: "09:44, 18:44",
+    interval: "дважды после пробуждения, каждые 7 мин",
+    wake: "2 раза в сутки",
+  },
+  continuous: {
+    schedule: "08:30, 10:30, 12:30, 14:30, 16:30, 18:30, 20:30",
+    interval: "дважды после пробуждения, каждые 7 мин",
+    wake: "каждые 2 часа",
+  },
+};
+
+function renderAutomationModeDetails() {
+  const details = automationModeView[automationMode.value] || automationModeView.manual;
+  automationSchedule.textContent = details.schedule;
+  document.querySelector("#automationInterval").textContent = details.interval;
+  document.querySelector("#automationWake").textContent = details.wake;
+}
 
 function showServerSupportModal(mode = automationMode.value) {
   if (serverSupport.connected) return;
@@ -92,6 +118,10 @@ function showServerSupportModal(mode = automationMode.value) {
 
 function hideServerSupportModal() {
   serverSupportModal.hidden = true;
+  if (!serverSupport.connected && ["continuous", "twiceDaily"].includes(automationMode.value)) {
+    automationMode.value = "manual";
+    renderAutomationModeDetails();
+  }
 }
 
 function requestServerSupportAction() {
@@ -990,6 +1020,8 @@ async function initApp() {
   serverSupport = await loadServerSupport();
   renderServerSupport();
   automationMode.value = settings.autoRecalcMode || "manual";
+  if (!serverSupport.connected && ["continuous", "twiceDaily"].includes(automationMode.value)) automationMode.value = "manual";
+  renderAutomationModeDetails();
   autoRecalcWindowDays.value = String(normalizeWindowDays(settings.autoRecalcWindowDays));
   const [fields, userFields] = await Promise.all([
     callMethod("crm.deal.fields"),
@@ -1067,6 +1099,7 @@ document.querySelector("#refresh").addEventListener("click", initApp);
 document.querySelector("#downloadReport").addEventListener("click", downloadReport);
 recentButton.addEventListener("click", recalculateDealsInWindow);
 automationMode.addEventListener("change", () => {
+  renderAutomationModeDetails();
   if (["continuous", "twiceDaily"].includes(automationMode.value) && !serverSupport.connected) showServerSupportModal(automationMode.value);
 });
 closeServerSupportModal.addEventListener("click", hideServerSupportModal);
