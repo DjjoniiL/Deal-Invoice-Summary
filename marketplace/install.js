@@ -4,7 +4,7 @@ const logNode = document.querySelector("#log");
 const INSTALL_STEP_DELAY_MS = 4000;
 
 // Можно добавить версию, если хотите
-const APP_VERSION = "layout-20260812-1"; // синхронизировать с app.js
+const APP_VERSION = "layout-20260812-2"; // синхронизировать с app.js
 
 function appUrl(fileName = "index.html") {
   const url = new URL(window.location.href);

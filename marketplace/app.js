@@ -4,17 +4,17 @@ const defaultSettings = {
   paidField: "UF_CRM_INV_SUM_PAID",
   unpaidField: "UF_CRM_INV_SUM_UNPAID",
   remainingField: "UF_CRM_INV_SUM_REMAINING",
-  autoRecalcMode: "manual",
+  autoRecalcMode: "onOpen",
   autoRecalcWindowDays: 21,
 };
-const appVersion = "layout-20260812-1";
+const appVersion = "layout-20260812-2";
 const dealSummarySectionName = "deal_invoice_summary";
 const dealSummarySectionTitle = "Расчёт оплаты счетов";
 const defaultFieldLabels = new Map([
   ["UF_CRM_INV_SUM_ISSUED", "Сумма выставленных счетов"],
   ["UF_CRM_INV_SUM_PAID", "Сумма оплаченных счетов"],
   ["UF_CRM_INV_SUM_UNPAID", "Сумма неоплаченных счетов"],
-  ["UF_CRM_INV_SUM_REMAINING", "Остаток оплаты по счетам"],
+  ["UF_CRM_INV_SUM_REMAINING", "Остаток оплаты сделки"],
 ]);
 
 const moneyFormat = new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 });
@@ -63,7 +63,12 @@ let userMap = new Map();
 let stageDiagnostics = null;
 let serverSupport = { connected: false };
 let lastWindowReport = null;
+let currentContextDealId = null;
+let contextDealSnapshot = null;
+let contextDealMonitorTimer = null;
+let contextDealRecalculateBusy = false;
 const serverOnlyModes = ["continuous", "twiceDaily", "onChange"];
+const contextDealMonitorIntervalMs = 5000;
 
 console.info(`Deal Invoice Summary Marketplace ${appVersion}`);
 
@@ -89,11 +94,6 @@ const serverSupportModeDetails = {
 };
 
 const automationModeView = {
-  manual: {
-    schedule: "по кнопке",
-    interval: "ручной запуск по окну",
-    wake: "не требуется",
-  },
   onOpen: {
     schedule: "при открытии карточки",
     interval: "без фонового запуска",
@@ -117,7 +117,7 @@ const automationModeView = {
 };
 
 function renderAutomationModeDetails() {
-  const details = automationModeView[automationMode.value] || automationModeView.manual;
+  const details = automationModeView[automationMode.value] || automationModeView.onOpen;
   automationSchedule.textContent = details.schedule;
   document.querySelector("#automationInterval").textContent = details.interval;
   document.querySelector("#automationWake").textContent = details.wake;
@@ -133,7 +133,7 @@ function showServerSupportModal(mode = automationMode.value) {
 function hideServerSupportModal() {
   serverSupportModal.hidden = true;
   if (!serverSupport.connected && serverOnlyModes.includes(automationMode.value)) {
-    automationMode.value = "manual";
+    automationMode.value = "onOpen";
     renderAutomationModeDetails();
   }
 }
@@ -246,6 +246,7 @@ function summarize(deal, invoices, settings) {
     paid: money(paid),
     unpaid: money(unpaid),
     remaining: money(dealAmount - paid),
+    dealAmount,
     invoiceCount: invoices.length,
     countedInvoiceCount: invoices.length - skippedNegative,
     skippedNegative,
@@ -758,7 +759,7 @@ async function ensureFields() {
     ["INV_SUM_ISSUED", "Сумма выставленных счетов"],
     ["INV_SUM_PAID", "Сумма оплаченных счетов"],
     ["INV_SUM_UNPAID", "Сумма неоплаченных счетов"],
-    ["INV_SUM_REMAINING", "Остаток оплаты по счетам"],
+    ["INV_SUM_REMAINING", "Остаток оплаты сделки"],
   ];
   const existing = await callList("crm.deal.userfield.list");
   const byName = new Map(existing.map((field) => [String(field.FIELD_NAME || "").toUpperCase(), field]));
@@ -898,8 +899,30 @@ function dealUrlFromId(dealId) {
   return id && portalHost ? `https://${portalHost}/crm/deal/details/${id}/` : "";
 }
 
+function renderDealTitle(dealId, deal, summary) {
+  dealTitle.replaceChildren();
+  dealTitle.append(`В сделке с ID ${dealId} `);
+  const dealLink = document.createElement("a");
+  dealLink.href = dealUrlFromId(dealId) || "#";
+  dealLink.target = "_blank";
+  dealLink.rel = "noopener";
+  dealLink.textContent = deal.TITLE || "без названия";
+  dealTitle.append(dealLink, ` закреплена сумма ${moneyFormat.format(summary.dealAmount || 0)}`);
+}
+
 function sameMoneyValue(left, right) {
   return money(left) === money(right);
+}
+
+function dealChangeSnapshot(deal) {
+  return {
+    amount: money(deal.OPPORTUNITY || deal.opportunity),
+    stageId: String(deal.STAGE_ID || deal.stageId || "").trim(),
+  };
+}
+
+function sameDealChangeSnapshot(left, right) {
+  return Boolean(left && right && sameMoneyValue(left.amount, right.amount) && left.stageId === right.stageId);
 }
 
 function buildChangedDealFields(deal, summary, settings) {
@@ -914,6 +937,48 @@ function buildChangedDealFields(deal, summary, settings) {
     if (field && !sameMoneyValue(deal[field], value)) fields[field] = value;
   }
   return fields;
+}
+
+async function recalculateContextDeal(reason = "context-deal-recalculate") {
+  if (!currentContextDealId || contextDealRecalculateBusy) return;
+  contextDealRecalculateBusy = true;
+  try {
+    const result = await recalculate(currentContextDealId, true);
+    contextDealSnapshot = dealChangeSnapshot(result.deal);
+    renderResult(currentContextDealId, result);
+    write({
+      appVersion,
+      ok: true,
+      operation: reason,
+      message: result.skippedUpdate ? "Поля сделки уже актуальны." : "Поля сделки обновлены.",
+      updatedFields: result.updatedFields,
+    });
+  } catch (error) {
+    write({ appVersion, ok: false, operation: reason, error: error.message }, { reveal: true });
+  } finally {
+    contextDealRecalculateBusy = false;
+  }
+}
+
+async function checkContextDealChanges() {
+  if (!currentContextDealId || contextDealRecalculateBusy || document.hidden) return;
+  try {
+    const deal = await callMethod("crm.deal.get", { id: Number(currentContextDealId) });
+    const nextSnapshot = dealChangeSnapshot(deal);
+    if (!sameDealChangeSnapshot(contextDealSnapshot, nextSnapshot)) {
+      contextDealSnapshot = nextSnapshot;
+      await recalculateContextDeal("open-deal-change-recalculate");
+    }
+  } catch (error) {
+    write({ appVersion, ok: false, operation: "open-deal-change-check", error: error.message }, { reveal: true });
+  }
+}
+
+function startContextDealMonitor(dealId, deal) {
+  currentContextDealId = Number(dealId);
+  contextDealSnapshot = dealChangeSnapshot(deal);
+  if (contextDealMonitorTimer) clearInterval(contextDealMonitorTimer);
+  contextDealMonitorTimer = setInterval(checkContextDealChanges, contextDealMonitorIntervalMs);
 }
 
 async function recalculate(dealId, write = true) {
@@ -943,7 +1008,7 @@ async function recalculate(dealId, write = true) {
 
 function renderResult(dealId, result) {
   reportNode.hidden = false;
-  dealTitle.textContent = `Сделка #${dealId}: ${result.deal.TITLE || "без названия"}`;
+  renderDealTitle(dealId, result.deal, result.summary);
   for (const [key, node] of Object.entries(totalNodes)) node.textContent = moneyFormat.format(result.summary[key]);
   invoiceList.replaceChildren();
 
@@ -952,11 +1017,11 @@ function renderResult(dealId, result) {
   headerRow.className = "invoice-header";
   headerRow.innerHTML = `
     <span>Счёт</span>
-    <span>Стадия</span>
-    <span>Сумма</span>
-    <span>Дата выставления</span>
     <span>Срок оплаты</span>
     <span>Ответственный</span>
+    <span>Сумма</span>
+    <span>Стадия</span>
+    <span>Дата выставления</span>
   `;
   invoiceList.append(headerRow);
 
@@ -991,7 +1056,7 @@ function renderResult(dealId, result) {
     const assignee = document.createElement("span");
     assignee.textContent = invoiceAssignedName(invoice);
 
-    row.append(title, stage, amount, dateIssued, datePay, assignee);
+    row.append(title, datePay, assignee, amount, stage, dateIssued);
     invoiceList.append(row);
   }
 
@@ -1064,8 +1129,8 @@ async function initApp() {
   const settings = await loadSettings();
   serverSupport = await loadServerSupport();
   renderServerSupport();
-  automationMode.value = settings.autoRecalcMode || "manual";
-  if (!serverSupport.connected && serverOnlyModes.includes(automationMode.value)) automationMode.value = "manual";
+  automationMode.value = automationModeView[settings.autoRecalcMode] ? settings.autoRecalcMode : "onOpen";
+  if (!serverSupport.connected && serverOnlyModes.includes(automationMode.value)) automationMode.value = "onOpen";
   renderAutomationModeDetails();
   autoRecalcWindowDays.value = String(normalizeWindowDays(settings.autoRecalcWindowDays));
   const [fields, userFields] = await Promise.all([
@@ -1085,6 +1150,7 @@ async function initApp() {
     const writeOnOpen = automationMode.value === "onOpen";
     const result = await recalculate(contextDealId, writeOnOpen);
     renderResult(contextDealId, result);
+    startContextDealMonitor(contextDealId, result.deal);
     write(writeOnOpen
       ? {
         appVersion,
