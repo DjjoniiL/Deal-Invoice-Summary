@@ -4,7 +4,7 @@ const logNode = document.querySelector("#log");
 const INSTALL_STEP_DELAY_MS = 4000;
 
 // Можно добавить версию, если хотите
-const APP_VERSION = "layout-20260812-2"; // синхронизировать с app.js
+const APP_VERSION = "layout-20260812-5"; // синхронизировать с app.js
 
 function appUrl(fileName = "index.html") {
   const url = new URL(window.location.href);
@@ -47,7 +47,15 @@ async function finishInstall() {
   writeLog({ step: "init", version: APP_VERSION, message: "Установка запущена" });
 
   const handler = appUrl("index.html");
-  writeLog({ step: "prepare", handler, message: "URL обработчика сформирован" });
+  const backgroundHandler = appUrl("worker.html");
+  const backgroundErrorHandler = appUrl("worker-error.html");
+  writeLog({
+    step: "prepare",
+    handler,
+    backgroundHandler,
+    backgroundErrorHandler,
+    message: "URL обработчиков сформированы",
+  });
 
   // Шаг 1: регистрация левого меню
   statusNode.textContent = "Регистрирую пункт левого меню...";
@@ -67,7 +75,45 @@ async function finishInstall() {
     // Не прерываем установку – продолжим
   }
 
-  // Шаг 2: завершение установки
+  // Шаг 2: регистрация фонового worker для открытых страниц Bitrix24
+  statusNode.textContent = "Регистрирую фоновый монитор карточек сделок...";
+  let backgroundWorker = null;
+  try {
+    const result = await callMethod("placement.bind", {
+      PLACEMENT: "PAGE_BACKGROUND_WORKER",
+      HANDLER: backgroundHandler,
+      OPTIONS: {
+        errorHandlerUrl: backgroundErrorHandler,
+      },
+    });
+    backgroundWorker = { ok: true, result };
+    writeLog({
+      step: "background-worker",
+      ok: true,
+      result,
+      message: "PAGE_BACKGROUND_WORKER зарегистрирован",
+    });
+  } catch (error) {
+    const alreadyBound = /ERROR_PLACEMENT_MAX_COUNT/i.test(error.message || "");
+    backgroundWorker = {
+      ok: alreadyBound,
+      alreadyBound,
+      error: error.message,
+      handler: backgroundHandler,
+    };
+    writeLog({
+      step: "background-worker",
+      ok: alreadyBound,
+      alreadyBound,
+      error: error.message,
+      message: alreadyBound
+        ? "PAGE_BACKGROUND_WORKER уже зарегистрирован для приложения"
+        : "Не удалось зарегистрировать PAGE_BACKGROUND_WORKER",
+    });
+    await wait(INSTALL_STEP_DELAY_MS);
+  }
+
+  // Шаг 3: завершение установки
   statusNode.textContent = "Завершаю установку...";
   writeLog({ step: "finish", message: "Вызываю BX24.installFinish()" });
   await wait(INSTALL_STEP_DELAY_MS);
@@ -86,6 +132,7 @@ async function finishInstall() {
     version: APP_VERSION,
     handler,
     leftMenu,
+    backgroundWorker,
     note: "Deal-card placement настраивается через сохранение сопоставления в приложении, а не через install.",
   });
 }

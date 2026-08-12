@@ -6,30 +6,52 @@ const installHtml = await readFile(new URL("./install.html", import.meta.url), "
 const installJs = await readFile(new URL("./install.js", import.meta.url), "utf8");
 const indexHtml = await readFile(new URL("./index.html", import.meta.url), "utf8");
 const appJs = await readFile(new URL("./app.js", import.meta.url), "utf8");
+const workerHtml = await readFile(new URL("./worker.html", import.meta.url), "utf8");
+const workerErrorHtml = await readFile(new URL("./worker-error.html", import.meta.url), "utf8");
+const workerJs = await readFile(new URL("./worker.js", import.meta.url), "utf8");
 const styleCss = await readFile(new URL("./style.css", import.meta.url), "utf8");
 const marketplaceFiles = await readdir(new URL(".", import.meta.url));
-const expectedMarketplaceFiles = ["app.js", "index.html", "install.css", "install.html", "install.js", "marketplace.test.js", "style.css"];
+const expectedMarketplaceFiles = [
+  "app.js",
+  "index.html",
+  "install.css",
+  "install.html",
+  "install.js",
+  "marketplace.test.js",
+  "style.css",
+  "worker-error.html",
+  "worker.html",
+  "worker.js",
+];
 
 test("marketplace archive has static Bitrix24 entry files", () => {
   assert.match(installHtml, /install\.css/);
   assert.match(installHtml, /install\.js/);
   assert.match(indexHtml, /style\.css/);
   assert.match(indexHtml, /app\.js/);
-  assert.match(indexHtml, /app\.js\?v=layout-20260812-3/);
-  assert.match(indexHtml, /style\.css\?v=layout-20260812-3/);
+  assert.match(indexHtml, /app\.js\?v=layout-20260812-5/);
+  assert.match(indexHtml, /style\.css\?v=layout-20260812-5/);
+  assert.match(workerHtml, /worker\.js\?v=layout-20260812-5/);
   assert.match(installHtml, /api\.bitrix24\.com\/api\/v1/);
   assert.match(indexHtml, /api\.bitrix24\.com\/api\/v1/);
+  assert.match(workerHtml, /api\.bitrix24\.com\/api\/v1/);
+  assert.match(workerErrorHtml, /OK/);
 });
 
 test("marketplace runtime package stays serverless", () => {
   assert.deepEqual([...marketplaceFiles].sort(), expectedMarketplaceFiles);
   const runtimeFiles = marketplaceFiles.filter((file) => file !== "marketplace.test.js");
-  assert.deepEqual(runtimeFiles.sort(), ["app.js", "index.html", "install.css", "install.html", "install.js", "style.css"]);
+  assert.deepEqual(runtimeFiles.sort(), ["app.js", "index.html", "install.css", "install.html", "install.js", "style.css", "worker-error.html", "worker.html", "worker.js"]);
 });
 
-test("marketplace installer binds only the left menu and completes install", () => {
+test("marketplace installer binds left menu and background worker then completes install", () => {
   assert.match(installJs, /placement\.bind/);
   assert.match(installJs, /LEFT_MENU/);
+  assert.match(installJs, /PAGE_BACKGROUND_WORKER/);
+  assert.match(installJs, /worker\.html/);
+  assert.match(installJs, /worker-error\.html/);
+  assert.match(installJs, /errorHandlerUrl/);
+  assert.match(installJs, /ERROR_PLACEMENT_MAX_COUNT/);
   assert.doesNotMatch(installJs, /CRM_DEAL_DETAIL_TAB/);
   assert.match(installJs, /BX24\.installFinish/);
   assert.match(installJs, /INSTALL_STEP_DELAY_MS = 4000/);
@@ -56,7 +78,7 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
   assert.match(appJs, /function defaultDealCardLayout/);
   assert.match(appJs, /defaultFieldLabels/);
   assert.match(appJs, /if \(defaultLabel\) return defaultLabel/);
-  assert.match(appJs, /layout-20260812-3/);
+  assert.match(appJs, /layout-20260812-5/);
   assert.match(appJs, /operation: "manual-recalculate"/);
   assert.match(appJs, /operation: "ensure-fields"/);
   assert.match(appJs, /operation: "save-mapping"/);
@@ -64,6 +86,30 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
   assert.match(appJs, /Сумма выставленных счетов/);
   assert.doesNotMatch(appJs, /vibecode\.bitrix24\.tech/);
   assert.doesNotMatch(appJs, /\/api\/recalculate/);
+});
+
+test("marketplace background worker watches open deal pages without backend", () => {
+  assert.match(workerJs, /layout-20260812-5/);
+  assert.match(workerJs, /BX24\?\.placement\?\.info/);
+  assert.match(workerJs, /PLACEMENT_OPTIONS/);
+  assert.match(workerJs, /PAGE_BACKGROUND_WORKER/);
+  assert.match(workerJs, /crm\\\/deal\\\/details\\\/\(\\d\+\)/);
+  assert.match(workerJs, /crm\.deal\.get/);
+  assert.match(workerJs, /crm\.item\.list/);
+  assert.match(workerJs, /crm\.deal\.update/);
+  assert.match(workerJs, /dealInvoiceSummarySettings/);
+  assert.match(workerJs, /function parseSettingsPayload/);
+  assert.match(workerJs, /dealInvoiceSummaryWorkerStatus/);
+  assert.match(workerJs, /workerPollIntervalMs = 5000/);
+  assert.match(workerJs, /workerStatusThrottleMs = 60000/);
+  assert.match(workerJs, /background-open-recalculate/);
+  assert.match(workerJs, /background-deal-change-recalculate/);
+  assert.match(workerJs, /OPPORTUNITY \?\? deal\.opportunity/);
+  assert.match(workerJs, /STAGE_ID \|\| deal\.stageId/);
+  assert.match(workerJs, /reloadData/);
+  assert.match(workerJs, /BX24\.reloadWindow/);
+  assert.doesNotMatch(workerJs, /vibecode\.bitrix24\.tech/);
+  assert.doesNotMatch(workerJs, /\/api\/recalculate/);
 });
 
 test("marketplace report resolves invoice stages and assigned users", () => {
@@ -116,6 +162,8 @@ test("marketplace automation panel keeps disabled server controls contained", ()
   assert.match(appJs, /autoRecalcMode:\s*"onOpen"/);
   assert.match(appJs, /onOpen:\s*{[\s\S]*schedule:\s*"при открытии карточки"/);
   assert.match(appJs, /onChange:\s*{[\s\S]*schedule:\s*"при изменении сделки\/счёта"/);
+  assert.match(appJs, /interval:\s*"каждые 5 секунд на открытой карточке"/);
+  assert.match(appJs, /wake:\s*"не требуется"/);
   assert.match(appJs, /schedule:\s*"в 9:45 утра И в 18:45 вечера"/);
   assert.match(appJs, /сервер включается в 09:45 и 18:45/);
   assert.match(appJs, /Каждый час с 09:00 до 20:00/);
@@ -142,13 +190,13 @@ test("marketplace automation panel keeps disabled server controls contained", ()
   assert.match(appJs, /function openOpenLine/);
   assert.match(appJs, /dealInvoiceSummaryServerSupport/);
   assert.match(appJs, /if \(serverSupport\.connected\) return/);
-  assert.match(appJs, /const serverOnlyModes = \["continuous", "twiceDaily", "onChange"\]/);
+  assert.match(appJs, /const serverOnlyModes = \["continuous", "twiceDaily"\]/);
   assert.match(appJs, /serverOnlyModes\.includes\(automationMode\.value\)/);
   assert.match(appJs, /automationModeView\[settings\.autoRecalcMode\] \? settings\.autoRecalcMode : "onOpen"/);
   assert.match(appJs, /automationMode\.value = "onOpen"/);
   assert.match(appJs, /function renderAutomationModeDetails/);
   assert.match(appJs, /const writeOnOpen = automationMode\.value === "onOpen"/);
-  assert.match(appJs, /await recalculate\(contextDealId, writeOnOpen\)/);
+  assert.match(appJs, /await recalculate\(contextDealId, writeOnOpen, \{ refreshCard: writeOnOpen \}\)/);
   assert.match(appJs, /operation: "open-deal-recalculate"/);
   assert.match(appJs, /function buildChangedDealFields/);
   assert.match(appJs, /if \(field && !sameMoneyValue\(deal\[field\], value\)\) fields\[field\] = value/);
@@ -161,6 +209,9 @@ test("marketplace automation panel keeps disabled server controls contained", ()
   assert.doesNotMatch(appJs, /document\.hidden\) return/);
   assert.match(appJs, /function getPlacementInterface/);
   assert.match(appJs, /BX24\.placement\.getInterface/);
+  assert.match(appJs, /function refreshDealCard/);
+  assert.match(appJs, /BX24\.placement\.call\("reloadData"/);
+  assert.match(appJs, /cardRefresh: result\.cardRefresh/);
   assert.match(appJs, /BX24\.placement\.bindEvent/);
   assert.match(appJs, /window\.addEventListener\("focus", checkContextDealChanges\)/);
   assert.match(appJs, /document\.addEventListener\("visibilitychange", checkContextDealChanges\)/);

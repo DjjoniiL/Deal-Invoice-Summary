@@ -7,7 +7,7 @@ const defaultSettings = {
   autoRecalcMode: "onOpen",
   autoRecalcWindowDays: 21,
 };
-const appVersion = "layout-20260812-3";
+const appVersion = "layout-20260812-5";
 const dealSummarySectionName = "deal_invoice_summary";
 const dealSummarySectionTitle = "Расчёт оплаты счетов";
 const defaultFieldLabels = new Map([
@@ -69,7 +69,7 @@ let contextDealMonitorTimer = null;
 let contextDealRecalculateBusy = false;
 let contextDealMonitorEventsBound = false;
 let placementInterfaceDiagnostics = null;
-const serverOnlyModes = ["continuous", "twiceDaily", "onChange"];
+const serverOnlyModes = ["continuous", "twiceDaily"];
 const contextDealMonitorIntervalMs = 5000;
 
 console.info(`Deal Invoice Summary Marketplace ${appVersion}`);
@@ -92,7 +92,7 @@ function setMappingStatus(text, tone = "neutral") {
 const serverSupportModeDetails = {
   continuous: "Режим «Постоянный»: сервер просыпается каждый час с 8:30 до 20:30, работает по 15 мин, с двойным пересчётом каждые 7 мин.\nИтого 3 ч 15 мин/сутки, до 200 руб/мес за 30 рабочих дней.",
   twiceDaily: "Режим «Утром и вечером»: сервер включается в 09:45 и 18:45, работает по 15 мин, с двойным пересчётом каждые 7 мин.\nИтого 30 мин/сутки, до 145 руб/мес за 30 рабочих дней.",
-  onChange: "Режим «При изменении сделки/счёта» будет доступен после отдельного подключения серверного обработчика.",
+  onChange: "Режим «При изменении сделки/счёта» работает в Marketplace через фоновый виджет Bitrix24 на открытых страницах портала: приложение отслеживает сохранённые изменения суммы или стадии открытой сделки и пересчитывает поля без внешнего backend.",
 };
 
 const automationModeView = {
@@ -103,8 +103,8 @@ const automationModeView = {
   },
   onChange: {
     schedule: "при изменении сделки/счёта",
-    interval: "требуется сервер",
-    wake: "требуется сервер",
+    interval: "каждые 5 секунд на открытой карточке",
+    wake: "не требуется",
   },
   twiceDaily: {
     schedule: "в 9:45 утра И в 18:45 вечера",
@@ -945,7 +945,7 @@ async function recalculateContextDeal(reason = "context-deal-recalculate") {
   if (!currentContextDealId || contextDealRecalculateBusy) return;
   contextDealRecalculateBusy = true;
   try {
-    const result = await recalculate(currentContextDealId, true);
+    const result = await recalculate(currentContextDealId, true, { refreshCard: true });
     contextDealSnapshot = dealChangeSnapshot(result.deal);
     renderResult(currentContextDealId, result);
     write({
@@ -954,6 +954,7 @@ async function recalculateContextDeal(reason = "context-deal-recalculate") {
       operation: reason,
       message: result.skippedUpdate ? "Поля сделки уже актуальны." : "Поля сделки обновлены.",
       updatedFields: result.updatedFields,
+      cardRefresh: result.cardRefresh,
       placementInterface: placementInterfaceDiagnostics,
     });
   } catch (error) {
@@ -996,6 +997,29 @@ function getPlacementInterface() {
   });
 }
 
+async function refreshDealCard() {
+  if (!window.BX24?.placement?.call) return { ok: false, skipped: true, reason: "placement.call unavailable" };
+  try {
+    const info = await getPlacementInterface();
+    const commands = normalizePlacementInterfaceList(info?.command);
+    const events = normalizePlacementInterfaceList(info?.event);
+    placementInterfaceDiagnostics = { commands, events };
+    if (!commands.includes("reloadData")) {
+      return { ok: false, skipped: true, reason: "reloadData unavailable", placementInterface: placementInterfaceDiagnostics };
+    }
+    return await new Promise((resolve) => {
+      window.BX24.placement.call("reloadData", {}, (result) => resolve({
+        ok: true,
+        command: "reloadData",
+        result,
+        placementInterface: placementInterfaceDiagnostics,
+      }));
+    });
+  } catch (error) {
+    return { ok: false, command: "reloadData", error: error.message, placementInterface: placementInterfaceDiagnostics };
+  }
+}
+
 async function bindContextPlacementEvents() {
   if (!window.BX24?.placement?.bindEvent) return;
   try {
@@ -1027,7 +1051,7 @@ function startContextDealMonitor(dealId, deal) {
   }
 }
 
-async function recalculate(dealId, write = true) {
+async function recalculate(dealId, write = true, { refreshCard = false } = {}) {
   const settings = await loadSettings();
   const [deal, invoices] = await Promise.all([
     callMethod("crm.deal.get", { id: Number(dealId) }),
@@ -1040,16 +1064,18 @@ async function recalculate(dealId, write = true) {
   const summary = summarize(deal, invoices, settings);
   let updatedFields = {};
   let skippedUpdate = false;
+  let cardRefresh = null;
   if (write) {
     const fields = buildChangedDealFields(deal, summary, settings);
     if (Object.keys(fields).length) {
       await callMethod("crm.deal.update", { id: Number(dealId), fields });
       updatedFields = fields;
+      if (refreshCard) cardRefresh = await refreshDealCard();
     } else {
       skippedUpdate = true;
     }
   }
-  return { deal, invoices, summary, updatedFields, skippedUpdate };
+  return { deal, invoices, summary, updatedFields, skippedUpdate, cardRefresh };
 }
 
 function renderResult(dealId, result) {
@@ -1194,7 +1220,7 @@ async function initApp() {
     const url = dealUrlFromId(contextDealId);
     if (url) dealUrlInput.value = url;
     const writeOnOpen = automationMode.value === "onOpen";
-    const result = await recalculate(contextDealId, writeOnOpen);
+    const result = await recalculate(contextDealId, writeOnOpen, { refreshCard: writeOnOpen });
     renderResult(contextDealId, result);
     startContextDealMonitor(contextDealId, result.deal);
     write(writeOnOpen
@@ -1204,6 +1230,7 @@ async function initApp() {
         operation: "open-deal-recalculate",
         message: result.skippedUpdate ? "Расчёт готов. Поля уже актуальны." : "Расчёт готов. Поля сделки обновлены.",
         updatedFields: result.updatedFields,
+        cardRefresh: result.cardRefresh,
         placementInterface: placementInterfaceDiagnostics,
       }
       : "Расчёт готов.");
@@ -1241,7 +1268,7 @@ dealForm.addEventListener("submit", async (event) => {
     const url = dealUrlFromId(dealId);
     if (url) dealUrlInput.value = url;
     write(`Пересчитываю сделку #${dealId}...`, { reveal: true });
-    const result = await recalculate(dealId, true);
+    const result = await recalculate(dealId, true, { refreshCard: Number(dealId) === Number(currentContextDealId) });
     renderResult(dealId, result);
     write({
       appVersion,
@@ -1249,6 +1276,7 @@ dealForm.addEventListener("submit", async (event) => {
       message: result.skippedUpdate ? "Поля сделки уже актуальны." : "Поля сделки обновлены.",
       summary: result.summary,
       updatedFields: result.updatedFields,
+      cardRefresh: result.cardRefresh,
       placementInterface: placementInterfaceDiagnostics,
       stageLookup: stageDiagnostics,
     }, { reveal: true });
