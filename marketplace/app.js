@@ -4,9 +4,10 @@ const defaultSettings = {
   paidField: "UF_CRM_INV_SUM_PAID",
   unpaidField: "UF_CRM_INV_SUM_UNPAID",
   remainingField: "UF_CRM_INV_SUM_REMAINING",
+  autoRecalcMode: "manual",
   autoRecalcWindowDays: 21,
 };
-const appVersion = "layout-20260810-14";
+const appVersion = "layout-20260812-1";
 const dealSummarySectionName = "deal_invoice_summary";
 const dealSummarySectionTitle = "Расчёт оплаты счетов";
 const defaultFieldLabels = new Map([
@@ -62,6 +63,7 @@ let userMap = new Map();
 let stageDiagnostics = null;
 let serverSupport = { connected: false };
 let lastWindowReport = null;
+const serverOnlyModes = ["continuous", "twiceDaily", "onChange"];
 
 console.info(`Deal Invoice Summary Marketplace ${appVersion}`);
 
@@ -83,6 +85,7 @@ function setMappingStatus(text, tone = "neutral") {
 const serverSupportModeDetails = {
   continuous: "Режим «Постоянный»: сервер просыпается каждый час с 8:30 до 20:30, работает по 15 мин, с двойным пересчётом каждые 7 мин.\nИтого 3 ч 15 мин/сутки, до 200 руб/мес за 30 рабочих дней.",
   twiceDaily: "Режим «Утром и вечером»: сервер включается в 09:45 и 18:45, работает по 15 мин, с двойным пересчётом каждые 7 мин.\nИтого 30 мин/сутки, до 145 руб/мес за 30 рабочих дней.",
+  onChange: "Режим «При изменении сделки/счёта» будет доступен после отдельного подключения серверного обработчика.",
 };
 
 const automationModeView = {
@@ -90,6 +93,16 @@ const automationModeView = {
     schedule: "по кнопке",
     interval: "ручной запуск по окну",
     wake: "не требуется",
+  },
+  onOpen: {
+    schedule: "при открытии карточки",
+    interval: "без фонового запуска",
+    wake: "не требуется",
+  },
+  onChange: {
+    schedule: "при изменении сделки/счёта",
+    interval: "требуется сервер",
+    wake: "требуется сервер",
   },
   twiceDaily: {
     schedule: "в 9:45 утра И в 18:45 вечера",
@@ -119,7 +132,7 @@ function showServerSupportModal(mode = automationMode.value) {
 
 function hideServerSupportModal() {
   serverSupportModal.hidden = true;
-  if (!serverSupport.connected && ["continuous", "twiceDaily"].includes(automationMode.value)) {
+  if (!serverSupport.connected && serverOnlyModes.includes(automationMode.value)) {
     automationMode.value = "manual";
     renderAutomationModeDetails();
   }
@@ -885,6 +898,24 @@ function dealUrlFromId(dealId) {
   return id && portalHost ? `https://${portalHost}/crm/deal/details/${id}/` : "";
 }
 
+function sameMoneyValue(left, right) {
+  return money(left) === money(right);
+}
+
+function buildChangedDealFields(deal, summary, settings) {
+  const fields = {};
+  for (const [key, value] of Object.entries({
+    issuedField: summary.issued,
+    paidField: summary.paid,
+    unpaidField: summary.unpaid,
+    remainingField: summary.remaining,
+  })) {
+    const field = settings[key];
+    if (field && !sameMoneyValue(deal[field], value)) fields[field] = value;
+  }
+  return fields;
+}
+
 async function recalculate(dealId, write = true) {
   const settings = await loadSettings();
   const [deal, invoices] = await Promise.all([
@@ -896,19 +927,18 @@ async function recalculate(dealId, write = true) {
     loadUsers(invoices.map(invoiceAssignedById)),
   ]);
   const summary = summarize(deal, invoices, settings);
+  let updatedFields = {};
+  let skippedUpdate = false;
   if (write) {
-    const fields = {};
-    for (const [key, value] of Object.entries({
-      issuedField: summary.issued,
-      paidField: summary.paid,
-      unpaidField: summary.unpaid,
-      remainingField: summary.remaining,
-    })) {
-      if (settings[key]) fields[settings[key]] = value;
+    const fields = buildChangedDealFields(deal, summary, settings);
+    if (Object.keys(fields).length) {
+      await callMethod("crm.deal.update", { id: Number(dealId), fields });
+      updatedFields = fields;
+    } else {
+      skippedUpdate = true;
     }
-    await callMethod("crm.deal.update", { id: Number(dealId), fields });
   }
-  return { deal, invoices, summary };
+  return { deal, invoices, summary, updatedFields, skippedUpdate };
 }
 
 function renderResult(dealId, result) {
@@ -1035,7 +1065,7 @@ async function initApp() {
   serverSupport = await loadServerSupport();
   renderServerSupport();
   automationMode.value = settings.autoRecalcMode || "manual";
-  if (!serverSupport.connected && ["continuous", "twiceDaily"].includes(automationMode.value)) automationMode.value = "manual";
+  if (!serverSupport.connected && serverOnlyModes.includes(automationMode.value)) automationMode.value = "manual";
   renderAutomationModeDetails();
   autoRecalcWindowDays.value = String(normalizeWindowDays(settings.autoRecalcWindowDays));
   const [fields, userFields] = await Promise.all([
@@ -1052,9 +1082,18 @@ async function initApp() {
     dealIdInput.value = contextDealId;
     const url = dealUrlFromId(contextDealId);
     if (url) dealUrlInput.value = url;
-    const result = await recalculate(contextDealId, false);
+    const writeOnOpen = automationMode.value === "onOpen";
+    const result = await recalculate(contextDealId, writeOnOpen);
     renderResult(contextDealId, result);
-    write("Расчёт готов.");
+    write(writeOnOpen
+      ? {
+        appVersion,
+        ok: true,
+        operation: "open-deal-recalculate",
+        message: result.skippedUpdate ? "Расчёт готов. Поля уже актуальны." : "Расчёт готов. Поля сделки обновлены.",
+        updatedFields: result.updatedFields,
+      }
+      : "Расчёт готов.");
   }
 }
 
@@ -1091,7 +1130,14 @@ dealForm.addEventListener("submit", async (event) => {
     write(`Пересчитываю сделку #${dealId}...`, { reveal: true });
     const result = await recalculate(dealId, true);
     renderResult(dealId, result);
-    write({ appVersion, ok: true, message: "Поля сделки обновлены.", summary: result.summary, stageLookup: stageDiagnostics }, { reveal: true });
+    write({
+      appVersion,
+      ok: true,
+      message: result.skippedUpdate ? "Поля сделки уже актуальны." : "Поля сделки обновлены.",
+      summary: result.summary,
+      updatedFields: result.updatedFields,
+      stageLookup: stageDiagnostics,
+    }, { reveal: true });
   } catch (error) {
     write({ appVersion, ok: false, operation: "manual-recalculate", error: error.message }, { reveal: true });
   }
@@ -1115,7 +1161,7 @@ document.querySelector("#downloadReport").addEventListener("click", downloadRepo
 recentButton.addEventListener("click", recalculateDealsInWindow);
 automationMode.addEventListener("change", () => {
   renderAutomationModeDetails();
-  if (["continuous", "twiceDaily"].includes(automationMode.value) && !serverSupport.connected) showServerSupportModal(automationMode.value);
+  if (serverOnlyModes.includes(automationMode.value) && !serverSupport.connected) showServerSupportModal(automationMode.value);
 });
 closeServerSupportModal.addEventListener("click", hideServerSupportModal);
 requestServerSupport.addEventListener("click", requestServerSupportAction);

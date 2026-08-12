@@ -15,8 +15,8 @@ test("marketplace archive has static Bitrix24 entry files", () => {
   assert.match(installHtml, /install\.js/);
   assert.match(indexHtml, /style\.css/);
   assert.match(indexHtml, /app\.js/);
-  assert.match(indexHtml, /app\.js\?v=layout-20260810-14/);
-  assert.match(indexHtml, /style\.css\?v=layout-20260810-14/);
+  assert.match(indexHtml, /app\.js\?v=layout-20260812-1/);
+  assert.match(indexHtml, /style\.css\?v=layout-20260812-1/);
   assert.match(installHtml, /api\.bitrix24\.com\/api\/v1/);
   assert.match(indexHtml, /api\.bitrix24\.com\/api\/v1/);
 });
@@ -56,7 +56,7 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
   assert.match(appJs, /function defaultDealCardLayout/);
   assert.match(appJs, /defaultFieldLabels/);
   assert.match(appJs, /if \(defaultLabel\) return defaultLabel/);
-  assert.match(appJs, /layout-20260810-14/);
+  assert.match(appJs, /layout-20260812-1/);
   assert.match(appJs, /operation: "manual-recalculate"/);
   assert.match(appJs, /operation: "ensure-fields"/);
   assert.match(appJs, /operation: "save-mapping"/);
@@ -98,12 +98,17 @@ test("marketplace report formats invoice dates without time", () => {
 
 test("marketplace automation panel keeps disabled server controls contained", () => {
   assert.match(indexHtml, /<option value="manual" selected>Ручной<\/option>/);
+  assert.match(indexHtml, /<option value="onOpen">При открытии сделки<\/option>/);
+  assert.match(indexHtml, /<option value="onChange">При изменении сделки\/счёта<\/option>/);
   assert.match(indexHtml, /Утром и вечером/);
   assert.match(indexHtml, /Постоянный/);
   assert.match(indexHtml, /Нужна серверная поддержка/);
   assert.match(indexHtml, /id="automationSchedule"/);
   assert.match(indexHtml, /<option value="21" selected>21 сутки<\/option>/);
   assert.match(appJs, /autoRecalcWindowDays:\s*21/);
+  assert.match(appJs, /autoRecalcMode:\s*"manual"/);
+  assert.match(appJs, /onOpen:\s*{[\s\S]*schedule:\s*"при открытии карточки"/);
+  assert.match(appJs, /onChange:\s*{[\s\S]*schedule:\s*"при изменении сделки\/счёта"/);
   assert.match(appJs, /schedule:\s*"в 9:45 утра И в 18:45 вечера"/);
   assert.match(appJs, /сервер включается в 09:45 и 18:45/);
   assert.match(appJs, /Каждый час с 09:00 до 20:00/);
@@ -130,10 +135,18 @@ test("marketplace automation panel keeps disabled server controls contained", ()
   assert.match(appJs, /function openOpenLine/);
   assert.match(appJs, /dealInvoiceSummaryServerSupport/);
   assert.match(appJs, /if \(serverSupport\.connected\) return/);
-  assert.match(appJs, /\["continuous", "twiceDaily"\]\.includes\(automationMode\.value\)/);
+  assert.match(appJs, /const serverOnlyModes = \["continuous", "twiceDaily", "onChange"\]/);
+  assert.match(appJs, /serverOnlyModes\.includes\(automationMode\.value\)/);
   assert.match(appJs, /settings\.autoRecalcMode \|\| "manual"/);
   assert.match(appJs, /automationMode\.value = "manual"/);
   assert.match(appJs, /function renderAutomationModeDetails/);
+  assert.match(appJs, /const writeOnOpen = automationMode\.value === "onOpen"/);
+  assert.match(appJs, /await recalculate\(contextDealId, writeOnOpen\)/);
+  assert.match(appJs, /operation: "open-deal-recalculate"/);
+  assert.match(appJs, /function buildChangedDealFields/);
+  assert.match(appJs, /if \(field && !sameMoneyValue\(deal\[field\], value\)\) fields\[field\] = value/);
+  assert.match(appJs, /if \(Object\.keys\(fields\)\.length\)/);
+  assert.match(appJs, /skippedUpdate = true/);
   assert.match(appJs, /Отчёт сформирован и готов к скачиванию/);
   assert.doesNotMatch(appJs, /CSV-отчёт сформирован автоматически/);
   assert.match(appJs, /deal-invoice-window-\$\{source\.days\}-days\.csv/);
