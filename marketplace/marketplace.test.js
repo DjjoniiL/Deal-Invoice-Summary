@@ -15,8 +15,8 @@ test("marketplace archive has static Bitrix24 entry files", () => {
   assert.match(installHtml, /install\.js/);
   assert.match(indexHtml, /style\.css/);
   assert.match(indexHtml, /app\.js/);
-  assert.match(indexHtml, /app\.js\?v=layout-20260812-2/);
-  assert.match(indexHtml, /style\.css\?v=layout-20260812-2/);
+  assert.match(indexHtml, /app\.js\?v=layout-20260812-3/);
+  assert.match(indexHtml, /style\.css\?v=layout-20260812-3/);
   assert.match(installHtml, /api\.bitrix24\.com\/api\/v1/);
   assert.match(indexHtml, /api\.bitrix24\.com\/api\/v1/);
 });
@@ -56,7 +56,7 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
   assert.match(appJs, /function defaultDealCardLayout/);
   assert.match(appJs, /defaultFieldLabels/);
   assert.match(appJs, /if \(defaultLabel\) return defaultLabel/);
-  assert.match(appJs, /layout-20260812-2/);
+  assert.match(appJs, /layout-20260812-3/);
   assert.match(appJs, /operation: "manual-recalculate"/);
   assert.match(appJs, /operation: "ensure-fields"/);
   assert.match(appJs, /operation: "save-mapping"/);
@@ -155,9 +155,15 @@ test("marketplace automation panel keeps disabled server controls contained", ()
   assert.match(appJs, /if \(Object\.keys\(fields\)\.length\)/);
   assert.match(appJs, /skippedUpdate = true/);
   assert.match(appJs, /function dealChangeSnapshot/);
-  assert.match(appJs, /OPPORTUNITY \|\| deal\.opportunity/);
+  assert.match(appJs, /OPPORTUNITY \?\? deal\.opportunity/);
   assert.match(appJs, /STAGE_ID \|\| deal\.stageId/);
   assert.match(appJs, /function checkContextDealChanges/);
+  assert.doesNotMatch(appJs, /document\.hidden\) return/);
+  assert.match(appJs, /function getPlacementInterface/);
+  assert.match(appJs, /BX24\.placement\.getInterface/);
+  assert.match(appJs, /BX24\.placement\.bindEvent/);
+  assert.match(appJs, /window\.addEventListener\("focus", checkContextDealChanges\)/);
+  assert.match(appJs, /document\.addEventListener\("visibilitychange", checkContextDealChanges\)/);
   assert.match(appJs, /setInterval\(checkContextDealChanges, contextDealMonitorIntervalMs\)/);
   assert.match(appJs, /open-deal-change-recalculate/);
   assert.match(appJs, /startContextDealMonitor\(contextDealId, result\.deal\)/);

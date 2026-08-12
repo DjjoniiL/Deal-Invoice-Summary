@@ -7,7 +7,7 @@ const defaultSettings = {
   autoRecalcMode: "onOpen",
   autoRecalcWindowDays: 21,
 };
-const appVersion = "layout-20260812-2";
+const appVersion = "layout-20260812-3";
 const dealSummarySectionName = "deal_invoice_summary";
 const dealSummarySectionTitle = "Расчёт оплаты счетов";
 const defaultFieldLabels = new Map([
@@ -67,6 +67,8 @@ let currentContextDealId = null;
 let contextDealSnapshot = null;
 let contextDealMonitorTimer = null;
 let contextDealRecalculateBusy = false;
+let contextDealMonitorEventsBound = false;
+let placementInterfaceDiagnostics = null;
 const serverOnlyModes = ["continuous", "twiceDaily", "onChange"];
 const contextDealMonitorIntervalMs = 5000;
 
@@ -240,7 +242,7 @@ function summarize(deal, invoices, settings) {
     if (semantic === "S") paid += amount;
     else unpaid += amount;
   }
-  const dealAmount = money(deal.OPPORTUNITY || deal.opportunity);
+  const dealAmount = money(deal.OPPORTUNITY ?? deal.opportunity);
   return {
     issued: money(issued),
     paid: money(paid),
@@ -916,7 +918,7 @@ function sameMoneyValue(left, right) {
 
 function dealChangeSnapshot(deal) {
   return {
-    amount: money(deal.OPPORTUNITY || deal.opportunity),
+    amount: money(deal.OPPORTUNITY ?? deal.opportunity),
     stageId: String(deal.STAGE_ID || deal.stageId || "").trim(),
   };
 }
@@ -952,6 +954,7 @@ async function recalculateContextDeal(reason = "context-deal-recalculate") {
       operation: reason,
       message: result.skippedUpdate ? "Поля сделки уже актуальны." : "Поля сделки обновлены.",
       updatedFields: result.updatedFields,
+      placementInterface: placementInterfaceDiagnostics,
     });
   } catch (error) {
     write({ appVersion, ok: false, operation: reason, error: error.message }, { reveal: true });
@@ -961,7 +964,7 @@ async function recalculateContextDeal(reason = "context-deal-recalculate") {
 }
 
 async function checkContextDealChanges() {
-  if (!currentContextDealId || contextDealRecalculateBusy || document.hidden) return;
+  if (!currentContextDealId || contextDealRecalculateBusy) return;
   try {
     const deal = await callMethod("crm.deal.get", { id: Number(currentContextDealId) });
     const nextSnapshot = dealChangeSnapshot(deal);
@@ -974,11 +977,54 @@ async function checkContextDealChanges() {
   }
 }
 
+function normalizePlacementInterfaceList(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((item) => {
+    if (typeof item === "string") return item;
+    if (item && typeof item === "object") return item.event || item.name || item.id || item.code || "";
+    return "";
+  }).filter(Boolean))];
+}
+
+function getPlacementInterface() {
+  return new Promise((resolve) => {
+    if (!window.BX24?.placement?.getInterface) {
+      resolve(null);
+      return;
+    }
+    window.BX24.placement.getInterface((result) => resolve(result || null));
+  });
+}
+
+async function bindContextPlacementEvents() {
+  if (!window.BX24?.placement?.bindEvent) return;
+  try {
+    const info = await getPlacementInterface();
+    const commands = normalizePlacementInterfaceList(info?.command);
+    const events = normalizePlacementInterfaceList(info?.event);
+    placementInterfaceDiagnostics = { commands, events };
+    for (const eventName of events) {
+      window.BX24.placement.bindEvent(eventName, () => {
+        checkContextDealChanges();
+      });
+    }
+  } catch (error) {
+    placementInterfaceDiagnostics = { ok: false, error: error.message };
+  }
+}
+
 function startContextDealMonitor(dealId, deal) {
   currentContextDealId = Number(dealId);
   contextDealSnapshot = dealChangeSnapshot(deal);
   if (contextDealMonitorTimer) clearInterval(contextDealMonitorTimer);
   contextDealMonitorTimer = setInterval(checkContextDealChanges, contextDealMonitorIntervalMs);
+  if (!contextDealMonitorEventsBound) {
+    window.addEventListener("focus", checkContextDealChanges);
+    window.addEventListener("pageshow", checkContextDealChanges);
+    document.addEventListener("visibilitychange", checkContextDealChanges);
+    contextDealMonitorEventsBound = true;
+    bindContextPlacementEvents();
+  }
 }
 
 async function recalculate(dealId, write = true) {
@@ -1158,6 +1204,7 @@ async function initApp() {
         operation: "open-deal-recalculate",
         message: result.skippedUpdate ? "Расчёт готов. Поля уже актуальны." : "Расчёт готов. Поля сделки обновлены.",
         updatedFields: result.updatedFields,
+        placementInterface: placementInterfaceDiagnostics,
       }
       : "Расчёт готов.");
   }
@@ -1202,6 +1249,7 @@ dealForm.addEventListener("submit", async (event) => {
       message: result.skippedUpdate ? "Поля сделки уже актуальны." : "Поля сделки обновлены.",
       summary: result.summary,
       updatedFields: result.updatedFields,
+      placementInterface: placementInterfaceDiagnostics,
       stageLookup: stageDiagnostics,
     }, { reveal: true });
   } catch (error) {
