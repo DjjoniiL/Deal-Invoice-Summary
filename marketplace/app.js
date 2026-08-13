@@ -6,8 +6,10 @@ const defaultSettings = {
   remainingField: "UF_CRM_INV_SUM_REMAINING",
   autoRecalcMode: "onOpen",
   autoRecalcWindowDays: 21,
+  calculationCategoryId: "all",
 };
-const appVersion = "layout-20260812-5";
+const runtimeVersion = "layout-20260813-3";
+const appVersion = "Deal Invoice Summary v.17 Marketplace B24";
 const dealSummarySectionName = "deal_invoice_summary";
 const dealSummarySectionTitle = "Расчёт оплаты счетов";
 const defaultFieldLabels = new Map([
@@ -16,6 +18,7 @@ const defaultFieldLabels = new Map([
   ["UF_CRM_INV_SUM_UNPAID", "Сумма неоплаченных счетов"],
   ["UF_CRM_INV_SUM_REMAINING", "Остаток оплаты сделки"],
 ]);
+const settingsPageFileName = "settings.html";
 
 const moneyFormat = new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 });
 const form = document.querySelector("#settings");
@@ -29,7 +32,9 @@ const resultNode = document.querySelector("#result");
 const reportNode = document.querySelector(".marketplace-report");
 const dealTitle = document.querySelector("#dealTitle");
 const invoiceList = document.querySelector("#invoiceList");
+const openAppSettingsButton = document.querySelector("#openAppSettings");
 const automationMode = document.querySelector("#automationMode");
+const automationCategoryName = document.querySelector("#automationCategoryName");
 const autoRecalcWindowDays = document.querySelector("#autoRecalcWindowDays");
 const automationTracked = document.querySelector("#automationTracked");
 const automationLastRun = document.querySelector("#automationLastRun");
@@ -48,7 +53,31 @@ const requestServerSupport = document.querySelector("#requestServerSupport");
 const windowReportModal = document.querySelector("#windowReportModal");
 const windowReportText = document.querySelector("#windowReportText");
 const closeWindowReportModal = document.querySelector("#closeWindowReportModal");
+const viewWindowStatsButton = document.querySelector("#viewWindowStats");
 const downloadWindowReportButton = document.querySelector("#downloadWindowReport");
+const windowStatsButton = document.querySelector("#windowStatsButton");
+const windowStatsModal = document.querySelector("#windowStatsModal");
+const closeWindowStatsModal = document.querySelector("#closeWindowStatsModal");
+const windowStatsText = document.querySelector("#windowStatsText");
+const windowStatsChart = document.querySelector("#windowStatsChart");
+const invoiceAnalyticsTitle = document.querySelector("#invoiceAnalyticsTitle");
+const windowSummary = document.querySelector("#windowSummary");
+const windowSummaryNodes = {
+  issued: document.querySelector("#windowIssued"),
+  paid: document.querySelector("#windowPaid"),
+  unpaid: document.querySelector("#windowUnpaid"),
+  remaining: document.querySelector("#windowRemaining"),
+};
+const windowStatsNodes = {
+  paidAmount: document.querySelector("#statsPaidAmount"),
+  unpaidAmount: document.querySelector("#statsUnpaidAmount"),
+  emptyAmount: document.querySelector("#statsEmptyAmount"),
+  deals: document.querySelector("#statsDeals"),
+  issued: document.querySelector("#statsIssued"),
+  paid: document.querySelector("#statsPaid"),
+  unpaid: document.querySelector("#statsUnpaid"),
+  remaining: document.querySelector("#statsRemaining"),
+};
 const noticeAction = document.querySelector(".notice-action");
 const totalNodes = {
   issued: document.querySelector("#issued"),
@@ -62,7 +91,10 @@ let stageMap = new Map();
 let userMap = new Map();
 let stageDiagnostics = null;
 let serverSupport = { connected: false };
+let currentSettings = { ...defaultSettings };
 let lastWindowReport = null;
+let windowReportState = null;
+let windowChartState = { slices: [], hoveredIndex: -1 };
 let currentContextDealId = null;
 let contextDealSnapshot = null;
 let contextDealMonitorTimer = null;
@@ -81,7 +113,7 @@ function setLogVisible(visible) {
 
 function write(value, { reveal = false } = {}) {
   resultNode.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
-  if (reveal) setLogVisible(true);
+  if (reveal && !resultNode.hidden) setLogVisible(true);
 }
 
 function setMappingStatus(text, tone = "neutral") {
@@ -120,9 +152,11 @@ const automationModeView = {
 
 function renderAutomationModeDetails() {
   const details = automationModeView[automationMode.value] || automationModeView.onOpen;
-  automationSchedule.textContent = details.schedule;
-  document.querySelector("#automationInterval").textContent = details.interval;
-  document.querySelector("#automationWake").textContent = details.wake;
+  if (automationSchedule) automationSchedule.textContent = details.schedule;
+  const automationInterval = document.querySelector("#automationInterval");
+  const automationWake = document.querySelector("#automationWake");
+  if (automationInterval) automationInterval.textContent = details.interval;
+  if (automationWake) automationWake.textContent = details.wake;
 }
 
 function showServerSupportModal(mode = automationMode.value) {
@@ -162,6 +196,14 @@ function openOpenLine() {
   if (target) target.click();
 }
 
+function marketplaceFileUrl(fileName) {
+  const url = new URL(window.location.href);
+  url.pathname = url.pathname.replace(/[^/]*$/i, fileName);
+  url.search = `?v=${runtimeVersion}`;
+  url.hash = "";
+  return url.toString();
+}
+
 function showWindowReportModal(report) {
   lastWindowReport = report;
   windowReportText.textContent = `Отчёт за последние ${report.days} суток сформирован. Сделок в отчёте: ${report.dealCount}.`;
@@ -173,11 +215,219 @@ function hideWindowReportModal() {
 }
 
 function setAutomationProgress(text, percent, { visible = true, tone = "active" } = {}) {
+  const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
   automationProgress.hidden = !visible;
   automationProgress.dataset.tone = tone;
+  automationProgress.dataset.progress = safePercent >= 75 ? "high" : safePercent >= 35 ? "mid" : "low";
   automationProgressText.textContent = text;
-  automationProgressValue.textContent = `${percent}%`;
-  automationProgressBar.style.width = `${percent}%`;
+  automationProgressValue.textContent = `${safePercent}%`;
+  automationProgressBar.style.width = `${safePercent}%`;
+}
+
+function buildWindowSummary(report) {
+  const results = report?.results || [];
+  const includedResults = results.filter((item) => !item.skippedCategory);
+  const okResults = includedResults.filter((item) => item.ok);
+  const totals = okResults.reduce((acc, item) => {
+    acc.issued += money(item.summary?.issued);
+    acc.paid += money(item.summary?.paid);
+    acc.unpaid += money(item.summary?.unpaid);
+    acc.remaining += money(item.summary?.remaining);
+    return acc;
+  }, { issued: 0, paid: 0, unpaid: 0, remaining: 0 });
+
+  const status = includedResults.reduce((acc, item) => {
+    if (!item.ok) {
+      acc.error += 1;
+      return acc;
+    }
+    const invoiceCount = Number(item.summary?.invoiceCount || 0);
+    const dealAmount = money(item.summary?.dealAmount);
+    const dealStageId = String(item.deal?.STAGE_ID || item.deal?.stageId || "").trim();
+    const dealSemantic = dealStageSemantic(dealStageId);
+    let group = dealSemantic === "S" ? "paid" : "unpaid";
+    if (!invoiceCount) group = "empty";
+    acc.counts[group] += 1;
+    acc.amounts[group] += dealAmount;
+    return acc;
+  }, {
+    counts: { paid: 0, unpaid: 0, empty: 0, error: 0 },
+    amounts: { paid: 0, unpaid: 0, empty: 0 },
+  });
+
+  const dealCount = Number(report?.dealCount ?? includedResults.length) || includedResults.length;
+  return {
+    ...totals,
+    dealCount,
+    status,
+  };
+}
+
+function chartPointerPosition(event) {
+  const rect = windowStatsChart.getBoundingClientRect();
+  const scaleX = windowStatsChart.width / rect.width;
+  const scaleY = windowStatsChart.height / rect.height;
+  return {
+    x: (event.clientX - rect.left) * scaleX,
+    y: (event.clientY - rect.top) * scaleY,
+  };
+}
+
+function hitTestChartSlice(point) {
+  const cx = windowStatsChart.width / 2;
+  const cy = windowStatsChart.height / 2;
+  const dx = point.x - cx;
+  const dy = point.y - cy;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  if (distance < windowChartState.innerRadius || distance > windowChartState.outerRadius) return -1;
+  let angle = Math.atan2(dy, dx) + Math.PI / 2;
+  if (angle < 0) angle += Math.PI * 2;
+  return windowChartState.slices.findIndex((slice) => angle >= slice.start && angle <= slice.end);
+}
+
+function drawDealStatusChart(hoveredIndex = -1) {
+  const ctx = windowStatsChart.getContext("2d");
+  const width = windowStatsChart.width;
+  const height = windowStatsChart.height;
+  const cx = width / 2;
+  const cy = height / 2;
+  ctx.clearRect(0, 0, width, height);
+  ctx.lineCap = "butt";
+  if (!windowChartState.slices.length) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, windowChartState.radius, 0, Math.PI * 2);
+    ctx.strokeStyle = "#d0d5dd";
+    ctx.lineWidth = windowChartState.strokeWidth;
+    ctx.stroke();
+    ctx.fillStyle = "#172033";
+    ctx.font = "700 46px Arial, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("0", cx, cy);
+    return;
+  }
+  for (const [index, slice] of windowChartState.slices.entries()) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, windowChartState.radius, slice.start - Math.PI / 2, slice.end - Math.PI / 2);
+    ctx.strokeStyle = slice.color;
+    ctx.lineWidth = index === hoveredIndex ? windowChartState.strokeWidth + 10 : windowChartState.strokeWidth;
+    ctx.stroke();
+    ctx.restore();
+  }
+  const hovered = windowChartState.slices[hoveredIndex];
+  if (hovered) {
+    const mid = (hovered.start + hovered.end) / 2 - Math.PI / 2;
+    const labelRadius = (windowChartState.innerRadius + windowChartState.outerRadius) / 2;
+    ctx.fillStyle = "#fff";
+    ctx.font = "800 54px Arial, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.shadowColor = "rgba(23, 32, 51, .45)";
+    ctx.shadowBlur = 10;
+    ctx.fillText(String(hovered.value), cx + Math.cos(mid) * labelRadius, cy + Math.sin(mid) * labelRadius);
+  }
+}
+
+function renderDealStatusChart(summary) {
+  const statuses = [
+    { key: "paid", label: "Завершены", value: summary.status.counts.paid, color: "#23b47e" },
+    { key: "unpaid", label: "Ожидают доплаты", value: summary.status.counts.unpaid, color: "#2b7de9" },
+    { key: "empty", label: "Без счетов", value: summary.status.counts.empty, color: "#d0d5dd" },
+  ];
+  const total = statuses.reduce((sum, item) => sum + item.value, 0);
+  const radius = 252;
+  const strokeWidth = 112;
+  windowChartState = {
+    radius,
+    strokeWidth,
+    innerRadius: radius - strokeWidth / 2,
+    outerRadius: radius + strokeWidth / 2,
+    hoveredIndex: -1,
+    slices: [],
+  };
+  let start = 0;
+  if (total) {
+    windowChartState.slices = statuses.filter((item) => item.value > 0).map((item) => {
+      const end = start + (item.value / total) * Math.PI * 2;
+      const slice = { ...item, start, end };
+      start = end;
+      return slice;
+    });
+  }
+  drawDealStatusChart(-1);
+}
+
+function updateChartHover(event) {
+  if (!windowChartState.slices.length) return;
+  const hoveredIndex = hitTestChartSlice(chartPointerPosition(event));
+  if (hoveredIndex === windowChartState.hoveredIndex) return;
+  windowChartState.hoveredIndex = hoveredIndex;
+  drawDealStatusChart(hoveredIndex);
+}
+
+function clearChartHover() {
+  if (windowChartState.hoveredIndex === -1) return;
+  windowChartState.hoveredIndex = -1;
+  drawDealStatusChart(-1);
+}
+
+function renderWindowSummary(report) {
+  windowReportState = {
+    days: normalizeWindowDays(report.days),
+    categoryId: settingsCategoryId(report.settings),
+    report,
+  };
+  lastWindowReport = report;
+  const summary = buildWindowSummary(report);
+  for (const [key, node] of Object.entries(windowSummaryNodes)) {
+    if (node) node.textContent = moneyFormat.format(summary[key]);
+  }
+  windowSummary.hidden = false;
+  windowStatsButton.disabled = false;
+  return summary;
+}
+
+function resetWindowSummary() {
+  windowReportState = null;
+  lastWindowReport = null;
+  windowSummary.hidden = true;
+  windowStatsButton.disabled = true;
+  setAutomationProgress("", 0, { visible: false });
+}
+
+function restoreWindowSummaryForPeriod(days) {
+  const selectedCategoryId = settingsCategoryId(currentSettings);
+  if (!windowReportState || windowReportState.days !== normalizeWindowDays(days) || windowReportState.categoryId !== selectedCategoryId) {
+    resetWindowSummary();
+    return;
+  }
+  renderWindowSummary(windowReportState.report);
+}
+
+function renderWindowStats(report) {
+  const summary = buildWindowSummary(report);
+  renderDealStatusChart(summary);
+  windowStatsText.textContent = `Период: последние ${report.days} суток.`;
+  invoiceAnalyticsTitle.textContent = `Аналитика счетов за период ${report.days} суток`;
+  windowStatsNodes.paidAmount.textContent = moneyFormat.format(summary.status.amounts.paid);
+  windowStatsNodes.unpaidAmount.textContent = moneyFormat.format(summary.status.amounts.unpaid);
+  windowStatsNodes.emptyAmount.textContent = moneyFormat.format(summary.status.amounts.empty);
+  windowStatsNodes.deals.textContent = String(summary.dealCount);
+  windowStatsNodes.issued.textContent = moneyFormat.format(summary.issued);
+  windowStatsNodes.paid.textContent = moneyFormat.format(summary.paid);
+  windowStatsNodes.unpaid.textContent = moneyFormat.format(summary.unpaid);
+  windowStatsNodes.remaining.textContent = moneyFormat.format(summary.remaining);
+}
+
+function showWindowStatsModal() {
+  if (!lastWindowReport) return;
+  renderWindowStats(lastWindowReport);
+  windowStatsModal.hidden = false;
+}
+
+function hideWindowStatsModal() {
+  windowStatsModal.hidden = true;
 }
 
 function formatLastRun(value) {
@@ -224,6 +474,31 @@ function statusSemantic(stageId) {
   if (suffix === "P" || suffix === "WON") return "S";
   if (suffix === "D" || suffix === "LOSE" || suffix === "LOST") return "F";
   return "";
+}
+
+function dealStageSemantic(stageId) {
+  const suffix = String(stageId || "").split(":").pop().toUpperCase();
+  if (suffix === "WON") return "S";
+  if (suffix === "LOSE" || suffix === "LOST" || suffix === "D") return "F";
+  return "P";
+}
+
+function dealCategoryId(deal) {
+  const value = deal?.CATEGORY_ID ?? deal?.categoryId ?? deal?.category_id ?? 0;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function settingsCategoryId(settings) {
+  const value = settings?.calculationCategoryId;
+  if (value === undefined || value === null || value === "" || value === "all") return "all";
+  const number = Number(value);
+  return Number.isFinite(number) ? number : "all";
+}
+
+function dealMatchesCalculationCategory(deal, settings) {
+  const selected = settingsCategoryId(settings);
+  return selected === "all" || dealCategoryId(deal) === selected;
 }
 
 function summarize(deal, invoices, settings) {
@@ -302,6 +577,33 @@ async function loadServerSupport() {
     if (detected) return { option, ...detected };
   }
   return { connected: false };
+}
+
+function parseJsonOption(value, fallback) {
+  if (!value) return fallback;
+  if (typeof value === "string") return JSON.parse(value);
+  return value;
+}
+
+async function loadCachedDealCategories() {
+  try {
+    const stored = await callMethod("app.option.get", { option: "dealInvoiceSummaryDealCategories" });
+    const categories = parseJsonOption(stored, []);
+    return Array.isArray(categories) ? categories : [];
+  } catch {
+    return [];
+  }
+}
+
+async function renderCalculationCategory(settings) {
+  const selected = settingsCategoryId(settings);
+  if (selected === "all") {
+    automationCategoryName.textContent = "Все воронки";
+    return;
+  }
+  const categories = await loadCachedDealCategories();
+  const match = categories.find((category) => Number(category.id ?? category.ID) === selected);
+  automationCategoryName.textContent = match?.name || match?.NAME || `Воронка #${selected}`;
 }
 
 function renderServerSupport() {
@@ -837,6 +1139,8 @@ async function getRecentInvoiceDealIds(days) {
 
 async function recalculateDealsInWindow() {
   const days = normalizeWindowDays(autoRecalcWindowDays.value);
+  const settings = await loadSettings();
+  currentSettings = { ...settings, autoRecalcWindowDays: days };
   recentButton.disabled = true;
   setAutomationProgress("Ищу счета в выбранном окне...", 10);
   try {
@@ -845,8 +1149,9 @@ async function recalculateDealsInWindow() {
     if (!recent.dealIds.length) {
       setAutomationProgress("Сделок для пересчёта не найдено", 100, { tone: "warning" });
       automationLastRun.textContent = formatLastRun(new Date().toISOString());
-      const report = { appVersion, ok: true, operation: "marketplace-window-recalculate", days, ...recent, dealCount: 0, results: [] };
-      write({ ...report, message: "Сделок за выбранный период нет. Отчёт сформирован и готов к скачиванию." }, { reveal: true });
+      const report = { appVersion, ok: true, operation: "marketplace-window-recalculate", days, settings: currentSettings, ...recent, dealCount: 0, results: [] };
+      renderWindowSummary(report);
+      write({ ...report, message: "Сделок за выбранный период нет. Отчёт сформирован и готов к скачиванию." });
       showWindowReportModal(report);
       return;
     }
@@ -858,7 +1163,15 @@ async function recalculateDealsInWindow() {
       setAutomationProgress(`Пересчитываю сделку #${dealId}...`, Math.min(percent, 96));
       try {
         const result = await recalculate(dealId, true);
-        results.push({ dealId, ok: true, title: result.deal.TITLE || "", summary: result.summary, stageLookup: stageDiagnostics });
+        results.push({
+          dealId,
+          ok: true,
+          title: result.deal.TITLE || "",
+          deal: result.deal,
+          summary: result.summary,
+          skippedCategory: Boolean(result.skippedCategory),
+          stageLookup: stageDiagnostics,
+        });
       } catch (error) {
         results.push({ dealId, ok: false, error: error.message });
       }
@@ -867,12 +1180,15 @@ async function recalculateDealsInWindow() {
     const ok = results.every((result) => result.ok);
     setAutomationProgress(ok ? "Пересчёт сделок завершён" : "Пересчёт завершён с ошибками", 100, { tone: ok ? "success" : "warning" });
     automationLastRun.textContent = formatLastRun(new Date().toISOString());
-    const report = { appVersion, ok, operation: "marketplace-window-recalculate", days, ...recent, dealCount: recent.dealIds.length, results };
-    write({ ...report, message: "Пересчёт завершён. Отчёт сформирован и готов к скачиванию." }, { reveal: true });
+    const includedDealCount = results.filter((result) => !result.skippedCategory).length;
+    automationTracked.textContent = String(includedDealCount);
+    const report = { appVersion, ok, operation: "marketplace-window-recalculate", days, settings: currentSettings, ...recent, dealCount: includedDealCount, results };
+    renderWindowSummary(report);
+    write({ ...report, message: "Пересчёт завершён. Отчёт сформирован и готов к скачиванию." });
     showWindowReportModal(report);
   } catch (error) {
     setAutomationProgress("Ошибка пересчёта сделок", 100, { tone: "warning" });
-    write({ appVersion, ok: false, operation: "marketplace-window-recalculate", error: error.message }, { reveal: true });
+    write({ appVersion, ok: false, operation: "marketplace-window-recalculate", error: error.message });
   } finally {
     recentButton.disabled = false;
   }
@@ -1062,6 +1378,19 @@ async function recalculate(dealId, write = true, { refreshCard = false } = {}) {
     loadUsers(invoices.map(invoiceAssignedById)),
   ]);
   const summary = summarize(deal, invoices, settings);
+  if (!dealMatchesCalculationCategory(deal, settings)) {
+    return {
+      deal,
+      invoices,
+      summary,
+      updatedFields: {},
+      skippedUpdate: true,
+      skippedCategory: true,
+      categoryId: dealCategoryId(deal),
+      selectedCategoryId: settingsCategoryId(settings),
+      cardRefresh: null,
+    };
+  }
   let updatedFields = {};
   let skippedUpdate = false;
   let cardRefresh = null;
@@ -1199,10 +1528,11 @@ async function initApp() {
   portal.textContent = portalHost ? `${portalHost} · Bitrix24 Marketplace` : "Bitrix24 Marketplace";
   
   const settings = await loadSettings();
+  currentSettings = settings;
   serverSupport = await loadServerSupport();
   renderServerSupport();
-  automationMode.value = automationModeView[settings.autoRecalcMode] ? settings.autoRecalcMode : "onOpen";
-  if (!serverSupport.connected && serverOnlyModes.includes(automationMode.value)) automationMode.value = "onOpen";
+  await renderCalculationCategory(settings);
+  automationMode.value = "onChange";
   renderAutomationModeDetails();
   autoRecalcWindowDays.value = String(normalizeWindowDays(settings.autoRecalcWindowDays));
   const [fields, userFields] = await Promise.all([
@@ -1213,6 +1543,7 @@ async function initApp() {
   form.includeNegativeStages.checked = Boolean(settings.includeNegativeStages);
   setMappingStatus("Сопоставление готово.", "success");
   write("Настройки загружены.");
+  restoreWindowSummaryForPeriod(autoRecalcWindowDays.value);
 
   const contextDealId = dealIdFromContext();
   if (contextDealId) {
@@ -1240,11 +1571,13 @@ async function initApp() {
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
-    const settings = Object.fromEntries(new FormData(form));
+    const existingSettings = await loadSettings();
+    const settings = { ...existingSettings, ...Object.fromEntries(new FormData(form)) };
     settings.includeNegativeStages = form.includeNegativeStages.checked;
-    settings.autoRecalcMode = automationMode.value;
+    settings.autoRecalcMode = "onChange";
     settings.autoRecalcWindowDays = normalizeWindowDays(autoRecalcWindowDays.value);
     await saveSettings(settings);
+    currentSettings = settings;
     let card = null;
     card = await configureDealCardSection(settings);
     setMappingStatus(card?.ok ? "Сопоставление сохранено. Раздел карточки обновлён." : "Сопоставление сохранено. Проверьте журнал.", card?.ok ? "success" : "warning");
@@ -1300,7 +1633,17 @@ document.querySelector("#ensureFields").addEventListener("click", async () => {
 
 document.querySelector("#refresh").addEventListener("click", initApp);
 document.querySelector("#downloadReport").addEventListener("click", downloadReport);
+openAppSettingsButton.addEventListener("click", () => {
+  window.location.href = marketplaceFileUrl(settingsPageFileName);
+});
 recentButton.addEventListener("click", recalculateDealsInWindow);
+autoRecalcWindowDays.addEventListener("change", () => {
+  currentSettings = { ...currentSettings, autoRecalcWindowDays: normalizeWindowDays(autoRecalcWindowDays.value) };
+  resetWindowSummary();
+  saveSettings(currentSettings).catch((error) => {
+    write({ appVersion, ok: false, operation: "save-window-days", error: error.message });
+  });
+});
 automationMode.addEventListener("change", () => {
   renderAutomationModeDetails();
   if (serverOnlyModes.includes(automationMode.value) && !serverSupport.connected) showServerSupportModal(automationMode.value);
@@ -1311,9 +1654,19 @@ serverSupportModal.addEventListener("click", (event) => {
   if (event.target === serverSupportModal) hideServerSupportModal();
 });
 closeWindowReportModal.addEventListener("click", hideWindowReportModal);
+viewWindowStatsButton.addEventListener("click", () => {
+  showWindowStatsModal();
+});
 downloadWindowReportButton.addEventListener("click", () => downloadWindowReport());
+windowStatsButton.addEventListener("click", showWindowStatsModal);
+windowStatsChart.addEventListener("mousemove", updateChartHover);
+windowStatsChart.addEventListener("mouseleave", clearChartHover);
+closeWindowStatsModal.addEventListener("click", hideWindowStatsModal);
 windowReportModal.addEventListener("click", (event) => {
   if (event.target === windowReportModal) hideWindowReportModal();
+});
+windowStatsModal.addEventListener("click", (event) => {
+  if (event.target === windowStatsModal) hideWindowStatsModal();
 });
 noticeAction.addEventListener("click", openOpenLine);
 noticeAction.addEventListener("keydown", (event) => {

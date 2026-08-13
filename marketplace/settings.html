@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="style.css?v=layout-20260813-3">
+    <title>Настройки приложения</title>
+    <script src="//api.bitrix24.com/api/v1/"></script>
+  </head>
+  <body>
+    <main class="shell settings-shell">
+      <section class="menu-hero">
+        <div>
+          <p>DEAL INVOICE SUMMARY</p>
+          <h1>Настройки приложения</h1>
+          <p id="settingsPortal">Bitrix24 Marketplace</p>
+        </div>
+        <button id="backToApp" class="icon-button" title="Назад" type="button">←</button>
+      </section>
+
+      <section class="panel settings-panel">
+        <h2>Расчёты по воронке</h2>
+        <p>Выберите воронку, сделки которой должны участвовать в пересчётах приложения.</p>
+
+        <label>Воронка для расчётов
+          <select id="calculationCategoryId">
+            <option value="all">Все воронки</option>
+          </select>
+        </label>
+
+        <label>Период массового расчёта
+          <select id="autoRecalcWindowDaysSetting">
+            <option value="42">42 суток</option>
+            <option value="28">28 суток</option>
+            <option value="21">21 сутки</option>
+            <option value="14">14 суток</option>
+            <option value="7">7 суток</option>
+            <option value="2">2 суток</option>
+          </select>
+        </label>
+
+        <div class="form-actions">
+          <button id="saveAppSettings" type="button">Сохранить настройки</button>
+          <button id="refreshDealCategories" class="secondary-button" type="button">Обновить список</button>
+          <span id="settingsStatus">Загружаю настройки...</span>
+        </div>
+      </section>
+
+      <div style="font-size:10px;color:#999;text-align:center;margin-top:8px;">
+        Deal Invoice Summary v.17 Marketplace B24
+      </div>
+    </main>
+    <script src="settings.js?v=layout-20260813-3"></script>
+  </body>
+</html>

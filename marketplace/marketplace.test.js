@@ -6,6 +6,8 @@ const installHtml = await readFile(new URL("./install.html", import.meta.url), "
 const installJs = await readFile(new URL("./install.js", import.meta.url), "utf8");
 const indexHtml = await readFile(new URL("./index.html", import.meta.url), "utf8");
 const appJs = await readFile(new URL("./app.js", import.meta.url), "utf8");
+const settingsHtml = await readFile(new URL("./settings.html", import.meta.url), "utf8");
+const settingsJs = await readFile(new URL("./settings.js", import.meta.url), "utf8");
 const workerHtml = await readFile(new URL("./worker.html", import.meta.url), "utf8");
 const workerErrorHtml = await readFile(new URL("./worker-error.html", import.meta.url), "utf8");
 const workerJs = await readFile(new URL("./worker.js", import.meta.url), "utf8");
@@ -18,6 +20,8 @@ const expectedMarketplaceFiles = [
   "install.html",
   "install.js",
   "marketplace.test.js",
+  "settings.html",
+  "settings.js",
   "style.css",
   "worker-error.html",
   "worker.html",
@@ -29,11 +33,15 @@ test("marketplace archive has static Bitrix24 entry files", () => {
   assert.match(installHtml, /install\.js/);
   assert.match(indexHtml, /style\.css/);
   assert.match(indexHtml, /app\.js/);
-  assert.match(indexHtml, /app\.js\?v=layout-20260812-5/);
-  assert.match(indexHtml, /style\.css\?v=layout-20260812-5/);
-  assert.match(workerHtml, /worker\.js\?v=layout-20260812-5/);
+  assert.match(settingsHtml, /settings\.js\?v=layout-20260813-3/);
+  assert.match(settingsHtml, /style\.css\?v=layout-20260813-3/);
+  assert.match(indexHtml, /app\.js\?v=layout-20260813-3/);
+  assert.match(indexHtml, /style\.css\?v=layout-20260813-3/);
+  assert.match(workerHtml, /worker\.js\?v=layout-20260813-3/);
+  assert.match(indexHtml, /Deal Invoice Summary v\.17 Marketplace B24/);
   assert.match(installHtml, /api\.bitrix24\.com\/api\/v1/);
   assert.match(indexHtml, /api\.bitrix24\.com\/api\/v1/);
+  assert.match(settingsHtml, /api\.bitrix24\.com\/api\/v1/);
   assert.match(workerHtml, /api\.bitrix24\.com\/api\/v1/);
   assert.match(workerErrorHtml, /OK/);
 });
@@ -41,7 +49,7 @@ test("marketplace archive has static Bitrix24 entry files", () => {
 test("marketplace runtime package stays serverless", () => {
   assert.deepEqual([...marketplaceFiles].sort(), expectedMarketplaceFiles);
   const runtimeFiles = marketplaceFiles.filter((file) => file !== "marketplace.test.js");
-  assert.deepEqual(runtimeFiles.sort(), ["app.js", "index.html", "install.css", "install.html", "install.js", "style.css", "worker-error.html", "worker.html", "worker.js"]);
+  assert.deepEqual(runtimeFiles.sort(), ["app.js", "index.html", "install.css", "install.html", "install.js", "settings.html", "settings.js", "style.css", "worker-error.html", "worker.html", "worker.js"]);
 });
 
 test("marketplace installer binds left menu and background worker then completes install", () => {
@@ -50,6 +58,9 @@ test("marketplace installer binds left menu and background worker then completes
   assert.match(installJs, /PAGE_BACKGROUND_WORKER/);
   assert.match(installJs, /worker\.html/);
   assert.match(installJs, /worker-error\.html/);
+  assert.match(installJs, /crm\.category\.list/);
+  assert.match(installJs, /dealInvoiceSummaryDealCategories/);
+  assert.match(installJs, /function cacheDealCategories/);
   assert.match(installJs, /errorHandlerUrl/);
   assert.match(installJs, /ERROR_PLACEMENT_MAX_COUNT/);
   assert.doesNotMatch(installJs, /CRM_DEAL_DETAIL_TAB/);
@@ -78,7 +89,8 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
   assert.match(appJs, /function defaultDealCardLayout/);
   assert.match(appJs, /defaultFieldLabels/);
   assert.match(appJs, /if \(defaultLabel\) return defaultLabel/);
-  assert.match(appJs, /layout-20260812-5/);
+  assert.match(appJs, /layout-20260813-3/);
+  assert.match(appJs, /Deal Invoice Summary v\.17 Marketplace B24/);
   assert.match(appJs, /operation: "manual-recalculate"/);
   assert.match(appJs, /operation: "ensure-fields"/);
   assert.match(appJs, /operation: "save-mapping"/);
@@ -89,7 +101,8 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
 });
 
 test("marketplace background worker watches open deal pages without backend", () => {
-  assert.match(workerJs, /layout-20260812-5/);
+  assert.match(workerJs, /layout-20260813-3/);
+  assert.match(workerJs, /Deal Invoice Summary v\.17 Marketplace B24/);
   assert.match(workerJs, /BX24\?\.placement\?\.info/);
   assert.match(workerJs, /PLACEMENT_OPTIONS/);
   assert.match(workerJs, /PAGE_BACKGROUND_WORKER/);
@@ -99,6 +112,9 @@ test("marketplace background worker watches open deal pages without backend", ()
   assert.match(workerJs, /crm\.deal\.update/);
   assert.match(workerJs, /dealInvoiceSummarySettings/);
   assert.match(workerJs, /function parseSettingsPayload/);
+  assert.match(workerJs, /calculationCategoryId/);
+  assert.match(workerJs, /function dealMatchesCalculationCategory/);
+  assert.match(workerJs, /skippedCategory: true/);
   assert.match(workerJs, /dealInvoiceSummaryWorkerStatus/);
   assert.match(workerJs, /workerPollIntervalMs = 5000/);
   assert.match(workerJs, /workerStatusThrottleMs = 60000/);
@@ -149,15 +165,47 @@ test("marketplace report formats invoice dates without time", () => {
   assert.match(appJs, /invoiceDeadline\(invoice\)/);
 });
 
-test("marketplace automation panel keeps disabled server controls contained", () => {
+test("marketplace automation panel presents mass recalculation and statistics", () => {
   assert.doesNotMatch(indexHtml, /<option value="manual"/);
+  assert.match(indexHtml, /Массовый пересчёт сделок/);
+  assert.match(indexHtml, /Авторасчёт при изменении сделок\/счетов включён!/);
+  assert.match(indexHtml, /class="mapping-auto-note"/);
+  assert.doesNotMatch(indexHtml, /<p class="automation-note">Авторасчёт при изменении включён<\/p>/);
+  assert.match(indexHtml, /Период расчёта/);
   assert.match(indexHtml, /<option value="onOpen" selected>При открытии сделки<\/option>/);
   assert.match(indexHtml, /<option value="onChange">При изменении сделки\/счёта<\/option>/);
   assert.match(indexHtml, /Утром и вечером/);
   assert.match(indexHtml, /Постоянный/);
   assert.match(indexHtml, /Нужна серверная поддержка/);
-  assert.match(indexHtml, /id="automationSchedule"/);
+  assert.match(indexHtml, /id="automationMode" tabindex="-1"/);
+  assert.doesNotMatch(indexHtml, /id="automationSchedule"/);
+  assert.doesNotMatch(indexHtml, /<span class="server-only">Интервал<\/span>/);
   assert.match(indexHtml, /<option value="21" selected>21 сутки<\/option>/);
+  assert.match(indexHtml, /id="windowSummary" class="window-summary" hidden/);
+  assert.match(indexHtml, /id="windowStatsButton"/);
+  assert.match(indexHtml, /id="windowStatsModal"/);
+  assert.match(indexHtml, /<canvas id="windowStatsChart" class="donut-chart"/);
+  assert.match(indexHtml, /id="statsPaidAmount"/);
+  assert.match(indexHtml, /id="statsUnpaidAmount"/);
+  assert.match(indexHtml, /id="statsEmptyAmount"/);
+  assert.match(indexHtml, /id="invoiceAnalyticsTitle"/);
+  assert.match(indexHtml, /Завершены/);
+  assert.match(indexHtml, /Ожидают доплаты/);
+  assert.doesNotMatch(indexHtml, /legend-error/);
+  assert.doesNotMatch(indexHtml, /statsErrorPercent/);
+  assert.match(indexHtml, /id="openAppSettings"/);
+  assert.match(indexHtml, /aria-label="Настройки приложения"/);
+  assert.match(indexHtml, /id="automationCategoryName" class="automation-category"/);
+  assert.match(indexHtml, /class="secondary-button icon-button settings-link-button"/);
+  assert.match(settingsHtml, /id="calculationCategoryId"/);
+  assert.match(settingsHtml, /id="autoRecalcWindowDaysSetting"/);
+  assert.match(settingsHtml, /Все воронки/);
+  assert.match(settingsJs, /crm\.category\.list/);
+  assert.match(settingsJs, /dealInvoiceSummaryDealCategories/);
+  assert.match(settingsJs, /calculationCategoryId/);
+  assert.match(settingsJs, /autoRecalcWindowDays/);
+  assert.match(settingsJs, /normalizeWindowDays/);
+  assert.match(settingsJs, /app\.option\.set/);
   assert.match(appJs, /autoRecalcWindowDays:\s*21/);
   assert.match(appJs, /autoRecalcMode:\s*"onOpen"/);
   assert.match(appJs, /onOpen:\s*{[\s\S]*schedule:\s*"при открытии карточки"/);
@@ -173,16 +221,49 @@ test("marketplace automation panel keeps disabled server controls contained", ()
   assert.match(appJs, /Итого 30 мин\/сутки, до 145 руб\/мес за 30 рабочих дней/);
   assert.match(indexHtml, /Заявка на серверную версию/);
   assert.match(indexHtml, /windowReportModal/);
+  assert.match(indexHtml, /class="modal-actions window-report-actions"/);
+  assert.match(indexHtml, /id="viewWindowStats"/);
+  assert.match(indexHtml, /Посмотреть статистику/);
   assert.match(indexHtml, /downloadWindowReport/);
   assert.match(indexHtml, /loader_9_no7zeu\.js/);
-  assert.match(indexHtml, /class="server-only"/);
+  assert.doesNotMatch(indexHtml, /class="server-only"/);
   assert.match(indexHtml, /42 суток/);
-  assert.match(indexHtml, /Автопересчёт доступен с сервером/);
-  assert.match(indexHtml, /Сделать пересчёт всех сделок/);
+  assert.match(indexHtml, /class="visually-hidden" type="button" disabled tabindex="-1">Автопересчёт доступен с сервером/);
+  assert.match(indexHtml, /Запустить расчёт/);
+  assert.doesNotMatch(indexHtml, />Сделать пересчёт всех сделок</);
   assert.match(indexHtml, /id="automationProgress" class="automation-progress" hidden/);
   assert.match(appJs, /marketplace-window-recalculate/);
   assert.match(appJs, /function recalculateDealsInWindow/);
   assert.match(appJs, /function downloadWindowReport/);
+  assert.match(appJs, /function buildWindowSummary/);
+  assert.match(appJs, /function renderWindowSummary/);
+  assert.match(appJs, /function resetWindowSummary/);
+  assert.match(appJs, /function restoreWindowSummaryForPeriod/);
+  assert.match(appJs, /function showWindowStatsModal/);
+  assert.match(appJs, /settingsPageFileName = "settings\.html"/);
+  assert.match(appJs, /openAppSettingsButton\.addEventListener\("click"/);
+  assert.match(appJs, /viewWindowStatsButton\.addEventListener\("click"/);
+  assert.doesNotMatch(appJs, /viewWindowStatsButton\.addEventListener\("click", \(\) => \{\s*hideWindowReportModal\(\)/);
+  assert.match(appJs, /function renderDealStatusChart/);
+  assert.match(appJs, /function drawDealStatusChart/);
+  assert.match(appJs, /function updateChartHover/);
+  assert.match(appJs, /windowStatsChart\.getContext\("2d"\)/);
+  assert.match(appJs, /function dealStageSemantic/);
+  assert.match(appJs, /function dealMatchesCalculationCategory/);
+  assert.match(appJs, /windowChartState\.slices/);
+  assert.match(appJs, /autoRecalcWindowDays\.addEventListener\("change"/);
+  assert.match(appJs, /windowStatsChart\.addEventListener\("mousemove", updateChartHover\)/);
+  assert.match(appJs, /windowStatsChart\.addEventListener\("mouseleave", clearChartHover\)/);
+  assert.match(appJs, /const dealAmount = money\(item\.summary\?\.dealAmount\)/);
+  assert.match(appJs, /acc\.amounts\[group\] \+= dealAmount/);
+  assert.match(appJs, /const dealSemantic = dealStageSemantic\(dealStageId\)/);
+  assert.match(appJs, /skippedCategory: Boolean\(result\.skippedCategory\)/);
+  assert.match(appJs, /summary\.status\.amounts\.paid/);
+  assert.match(appJs, /invoiceAnalyticsTitle\.textContent = `Аналитика счетов за период \$\{report\.days\} суток`/);
+  assert.doesNotMatch(appJs, /statsErrorPercent/);
+  assert.doesNotMatch(appJs, /percentOf/);
+  assert.match(appJs, /automationMode\.value = "onChange"/);
+  assert.match(appJs, /settings\.autoRecalcMode = "onChange"/);
   assert.doesNotMatch(appJs, /"Ошибки", "Неразрешённые стадии"/);
   assert.doesNotMatch(appJs, /\(item\.stageLookup\?\.unresolved \|\| \[\]\)\.join\(", "\)/);
   assert.match(appJs, /function showWindowReportModal/);
@@ -192,9 +273,8 @@ test("marketplace automation panel keeps disabled server controls contained", ()
   assert.match(appJs, /if \(serverSupport\.connected\) return/);
   assert.match(appJs, /const serverOnlyModes = \["continuous", "twiceDaily"\]/);
   assert.match(appJs, /serverOnlyModes\.includes\(automationMode\.value\)/);
-  assert.match(appJs, /automationModeView\[settings\.autoRecalcMode\] \? settings\.autoRecalcMode : "onOpen"/);
-  assert.match(appJs, /automationMode\.value = "onOpen"/);
   assert.match(appJs, /function renderAutomationModeDetails/);
+  assert.match(appJs, /if \(automationSchedule\) automationSchedule\.textContent = details\.schedule/);
   assert.match(appJs, /const writeOnOpen = automationMode\.value === "onOpen"/);
   assert.match(appJs, /await recalculate\(contextDealId, writeOnOpen, \{ refreshCard: writeOnOpen \}\)/);
   assert.match(appJs, /operation: "open-deal-recalculate"/);
@@ -220,13 +300,26 @@ test("marketplace automation panel keeps disabled server controls contained", ()
   assert.match(appJs, /startContextDealMonitor\(contextDealId, result\.deal\)/);
   assert.match(appJs, /"Остаток оплаты сделки"/);
   assert.match(appJs, /Отчёт сформирован и готов к скачиванию/);
+  assert.match(appJs, /if \(reveal && !resultNode\.hidden\) setLogVisible\(true\)/);
   assert.doesNotMatch(appJs, /CSV-отчёт сформирован автоматически/);
   assert.match(appJs, /deal-invoice-window-\$\{source\.days\}-days\.csv/);
   assert.match(appJs, />=\$\{fieldName\}/);
-  assert.match(styleCss, /\.setup-grid\s*{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1\.15fr\) minmax\(360px,\s*\.85fr\)/);
+  assert.match(styleCss, /\.setup-grid\s*{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1\.08fr\) minmax\(420px,\s*\.92fr\)/);
   assert.match(styleCss, /\.automation-panel button\s*{[\s\S]*width:\s*100%/);
+  assert.match(styleCss, /\.automation-panel \.stats-button\s*{[\s\S]*width:\s*38px/);
   assert.match(styleCss, /\.automation-panel button\s*{[\s\S]*white-space:\s*normal/);
   assert.match(styleCss, /\.automation-list strong\s*{[\s\S]*overflow-wrap:\s*anywhere/);
+  assert.match(styleCss, /\.automation-title-row/);
+  assert.match(styleCss, /\.automation-category/);
+  assert.match(styleCss, /\.settings-link-button/);
+  assert.match(styleCss, /\.mapping-auto-note/);
+  assert.match(styleCss, /\.window-summary/);
+  assert.match(styleCss, /\.donut-chart/);
+  assert.match(styleCss, /\.stats-deal-count/);
+  assert.match(styleCss, /\.invoice-analytics/);
+  assert.match(styleCss, /\.window-report-actions\s*{[\s\S]*minmax\(250px,\s*1\.35fr\)/);
+  assert.match(styleCss, /\.automation-progress\[data-progress="mid"\]/);
+  assert.match(styleCss, /\.automation-progress\[data-progress="high"\]/);
   assert.match(styleCss, /\.automation-progress-track/);
   assert.match(styleCss, /\.modal-backdrop/);
   assert.match(styleCss, /\.modal-panel\s*{[\s\S]*width:\s*min\(640px,\s*100%\)/);

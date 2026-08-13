@@ -3,8 +3,8 @@ const installButton = document.querySelector("#installButton");
 const logNode = document.querySelector("#log");
 const INSTALL_STEP_DELAY_MS = 4000;
 
-// Можно добавить версию, если хотите
-const APP_VERSION = "layout-20260812-5"; // синхронизировать с app.js
+const RUNTIME_VERSION = "layout-20260813-3";
+const APP_VERSION = "Deal Invoice Summary v.17 Marketplace B24"; // синхронизировать с app.js
 
 function appUrl(fileName = "index.html") {
   const url = new URL(window.location.href);
@@ -39,6 +39,27 @@ function wait(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function normalizeDealCategory(category) {
+  const id = Number(category.id ?? category.ID);
+  if (!Number.isFinite(id)) return null;
+  return {
+    id,
+    name: category.name || category.NAME || `Воронка #${id}`,
+  };
+}
+
+async function loadDealCategories() {
+  const response = await callMethod("crm.category.list", { entityTypeId: 2 });
+  const categories = (response?.categories || response?.result?.categories || []).map(normalizeDealCategory).filter(Boolean);
+  return categories.length ? categories : [{ id: 0, name: "Основная" }];
+}
+
+async function cacheDealCategories() {
+  const categories = await loadDealCategories();
+  await callMethod("app.option.set", { options: { dealInvoiceSummaryDealCategories: JSON.stringify(categories) } });
+  return categories;
 }
 
 async function finishInstall() {
@@ -115,6 +136,16 @@ async function finishInstall() {
 
   // Шаг 3: завершение установки
   statusNode.textContent = "Завершаю установку...";
+  statusNode.textContent = "Загружаю список воронок сделок...";
+  let dealCategories = null;
+  try {
+    dealCategories = await cacheDealCategories();
+    writeLog({ step: "deal-categories", ok: true, count: dealCategories.length, categories: dealCategories, message: "Список воронок сохранён для настроек приложения" });
+  } catch (error) {
+    dealCategories = { ok: false, error: error.message };
+    writeLog({ step: "deal-categories", ok: false, error: error.message, message: "Не удалось сохранить список воронок при установке" });
+  }
+
   writeLog({ step: "finish", message: "Вызываю BX24.installFinish()" });
   await wait(INSTALL_STEP_DELAY_MS);
   try {
@@ -133,6 +164,7 @@ async function finishInstall() {
     handler,
     leftMenu,
     backgroundWorker,
+    dealCategories,
     note: "Deal-card placement настраивается через сохранение сопоставления в приложении, а не через install.",
   });
 }

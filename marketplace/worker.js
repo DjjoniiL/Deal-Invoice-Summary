@@ -1,4 +1,5 @@
-const appVersion = "layout-20260812-5";
+const runtimeVersion = "layout-20260813-3";
+const appVersion = "Deal Invoice Summary v.17 Marketplace B24";
 const defaultSettings = {
   includeNegativeStages: false,
   issuedField: "UF_CRM_INV_SUM_ISSUED",
@@ -7,6 +8,7 @@ const defaultSettings = {
   remainingField: "UF_CRM_INV_SUM_REMAINING",
   autoRecalcMode: "onOpen",
   autoRecalcWindowDays: 21,
+  calculationCategoryId: "all",
 };
 const workerPollIntervalMs = 5000;
 const workerStatusThrottleMs = 60000;
@@ -41,6 +43,24 @@ function money(value) {
 
 function sameMoneyValue(left, right) {
   return money(left) === money(right);
+}
+
+function dealCategoryId(deal) {
+  const value = deal?.CATEGORY_ID ?? deal?.categoryId ?? deal?.category_id ?? 0;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function settingsCategoryId(settings) {
+  const value = settings?.calculationCategoryId;
+  if (value === undefined || value === null || value === "" || value === "all") return "all";
+  const number = Number(value);
+  return Number.isFinite(number) ? number : "all";
+}
+
+function dealMatchesCalculationCategory(deal, settings) {
+  const selected = settingsCategoryId(settings);
+  return selected === "all" || dealCategoryId(deal) === selected;
 }
 
 function statusSemantic(stageId) {
@@ -236,6 +256,20 @@ async function recalculateDeal(dealId, deal, reason) {
   const settings = await loadSettings();
   const invoices = await getInvoices(dealId);
   const summary = summarize(deal, invoices, settings);
+  if (!dealMatchesCalculationCategory(deal, settings)) {
+    await saveWorkerStatus({
+      ok: true,
+      operation: reason,
+      summary,
+      updatedFields: {},
+      skippedUpdate: true,
+      skippedCategory: true,
+      categoryId: dealCategoryId(deal),
+      selectedCategoryId: settingsCategoryId(settings),
+      snapshot: dealChangeSnapshot(deal),
+    });
+    return { summary, updatedFields: {}, skippedUpdate: true, skippedCategory: true };
+  }
   const fields = buildChangedDealFields(deal, summary, settings);
   let updatedFields = {};
   let skippedUpdate = false;

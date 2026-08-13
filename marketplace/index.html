@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="style.css?v=layout-20260812-5">
+    <link rel="stylesheet" href="style.css?v=layout-20260813-3">
     <title>Калькулятор счетов</title>
     <script src="//api.bitrix24.com/api/v1/"></script>
   </head>
@@ -51,21 +51,29 @@
           <div class="form-actions">
             <button type="submit">Сохранить сопоставление</button>
             <span id="mappingStatus">Проверяю настройки...</span>
+            <button type="button" id="openAppSettings" class="secondary-button icon-button settings-link-button" title="Настройки приложения" aria-label="Настройки приложения">⋯</button>
+            <span class="mapping-auto-note">Авторасчёт при изменении сделок/счетов включён!</span>
           </div>
         </form>
 
         <section class="panel automation-panel">
-          <h2>Автопересчёт</h2>
+          <div class="automation-title-row">
+            <div>
+              <h2>Массовый пересчёт сделок</h2>
+            </div>
+            <p id="automationCategoryName" class="automation-category">Все воронки</p>
+            <button id="windowStatsButton" class="icon-button stats-button" type="button" title="Статистика периода" aria-label="Статистика периода" disabled>◔</button>
+          </div>
           <div class="automation-list">
-            <label>Режим расчёта
-              <select id="automationMode">
+            <label class="visually-hidden">Режим расчёта
+              <select id="automationMode" tabindex="-1">
                 <option value="onOpen" selected>При открытии сделки</option>
                 <option value="onChange">При изменении сделки/счёта</option>
                 <option value="twiceDaily">Утром и вечером</option>
                 <option value="continuous">Постоянный</option>
               </select>
             </label>
-            <label>Окно пересчёта
+            <label>Период расчёта
               <select id="autoRecalcWindowDays">
                 <option value="42">42 суток</option>
                 <option value="28">28 суток</option>
@@ -75,16 +83,20 @@
                 <option value="2">2 суток</option>
               </select>
             </label>
-            <span class="server-only">Интервал</span>
-            <strong id="automationInterval" class="server-only">ручной запуск по окну</strong>
-            <span class="server-only">Пробуждение</span>
-            <strong id="automationWake" class="server-only">не требуется</strong>
-            <span>Расписание</span>
-            <strong id="automationSchedule">по кнопке</strong>
-            <span>Отслеживается сделок</span>
-            <strong id="automationTracked">0</strong>
-            <span>Последний запуск</span>
-            <strong id="automationLastRun">Пока не запускался</strong>
+            <div class="automation-stat">
+              <span>Отслеживается сделок</span>
+              <strong id="automationTracked">0</strong>
+            </div>
+            <div class="automation-stat">
+              <span>Последний запуск</span>
+              <strong id="automationLastRun">Пока не запускался</strong>
+            </div>
+          </div>
+          <div id="windowSummary" class="window-summary" hidden>
+            <article><span>Выставлено</span><strong id="windowIssued">0 ₽</strong></article>
+            <article><span>Оплачено</span><strong id="windowPaid">0 ₽</strong></article>
+            <article><span>Не оплачено</span><strong id="windowUnpaid">0 ₽</strong></article>
+            <article><span>Остаток</span><strong id="windowRemaining">0 ₽</strong></article>
           </div>
           <div id="automationProgress" class="automation-progress" hidden>
             <div class="automation-progress-head">
@@ -96,8 +108,8 @@
             </div>
           </div>
           <div class="automation-actions">
-            <button id="serverStatusButton" type="button" disabled>Автопересчёт доступен с сервером</button>
-            <button id="recent" type="button">Сделать пересчёт всех сделок</button>
+            <button id="serverStatusButton" class="visually-hidden" type="button" disabled tabindex="-1">Автопересчёт доступен с сервером</button>
+            <button id="recent" type="button">Запустить расчёт</button>
           </div>
         </section>
       </section>
@@ -145,9 +157,40 @@
       <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="windowReportTitle">
         <h2 id="windowReportTitle">Отчёт сформирован</h2>
         <p id="windowReportText">Отчёт за выбранный период готов.</p>
-        <div class="modal-actions">
+        <div class="modal-actions window-report-actions">
           <button id="closeWindowReportModal" type="button" class="secondary-button">Закрыть</button>
+          <button id="viewWindowStats" type="button" class="secondary-button">Посмотреть статистику</button>
           <button id="downloadWindowReport" type="button">Скачать отчёт</button>
+        </div>
+      </section>
+    </div>
+    <div id="windowStatsModal" class="modal-backdrop" hidden>
+      <section class="modal-panel stats-modal" role="dialog" aria-modal="true" aria-labelledby="windowStatsTitle">
+        <div class="modal-title-row">
+          <h2 id="windowStatsTitle">Статистика периода</h2>
+          <div class="stats-deal-count">
+            <span>Сделок</span>
+            <strong id="statsDeals">0</strong>
+          </div>
+          <button id="closeWindowStatsModal" type="button" class="secondary-button icon-button" aria-label="Закрыть">×</button>
+        </div>
+        <p id="windowStatsText">Запустите расчёт, чтобы увидеть статистику.</p>
+        <div class="stats-chart-wrap">
+          <canvas id="windowStatsChart" class="donut-chart" width="704" height="704" aria-label="Диаграмма статусов сделок"></canvas>
+          <div class="stats-legend">
+            <span><i class="legend-paid"></i>Завершены <strong id="statsPaidAmount">0 ₽</strong></span>
+            <span><i class="legend-unpaid"></i>Ожидают доплаты <strong id="statsUnpaidAmount">0 ₽</strong></span>
+            <span><i class="legend-empty"></i>Без счетов <strong id="statsEmptyAmount">0 ₽</strong></span>
+          </div>
+        </div>
+        <div class="invoice-analytics">
+          <h3 id="invoiceAnalyticsTitle">Аналитика счетов за период</h3>
+          <div class="window-summary stats-summary">
+            <article><span>Выставлено</span><strong id="statsIssued">0 ₽</strong></article>
+            <article><span>Оплачено</span><strong id="statsPaid">0 ₽</strong></article>
+            <article><span>Не оплачено</span><strong id="statsUnpaid">0 ₽</strong></article>
+            <article><span>Остаток</span><strong id="statsRemaining">0 ₽</strong></article>
+          </div>
         </div>
       </section>
     </div>
@@ -158,9 +201,9 @@
       })(window,document,'https://cdn-ru.bitrix24.ru/b31051/crm/site_button/loader_9_no7zeu.js');
     </script>
     <!-- Принудительное обновление версии -->
-    <script src="app.js?v=layout-20260812-5"></script>
+    <script src="app.js?v=layout-20260813-3"></script>
     <div style="font-size:10px;color:#999;text-align:center;margin-top:8px;">
-      Версия: layout-20260812-5
+      Deal Invoice Summary v.17 Marketplace B24
     </div>
   </body>
 </html>
