@@ -8,8 +8,8 @@ const defaultSettings = {
   autoRecalcWindowDays: 21,
   calculationCategoryId: "all",
 };
-const runtimeVersion = "layout-20260813-3";
-const appVersion = "Deal Invoice Summary v.17 Marketplace B24";
+const runtimeVersion = "layout-20260813-4";
+const appVersion = "Deal Invoice Summary v.18 Marketplace B24";
 const dealSummarySectionName = "deal_invoice_summary";
 const dealSummarySectionTitle = "Расчёт оплаты счетов";
 const defaultFieldLabels = new Map([
@@ -193,7 +193,11 @@ function openOpenLine() {
     ".b24-widget-button-wrapper",
   ];
   const target = selectors.map((selector) => document.querySelector(selector)).find(Boolean);
-  if (target) target.click();
+  if (target) {
+    target.click();
+    return;
+  }
+  window.location.href = marketplaceFileUrl(settingsPageFileName);
 }
 
 function marketplaceFileUrl(fileName) {
@@ -460,6 +464,8 @@ function listRows(response, key = null) {
     ? response?.[key] ?? response?.result?.[key]
     : response;
   if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.result)) return data.result;
+  if (Array.isArray(data?.items)) return data.items;
   if (data && typeof data === "object") return Object.values(data).filter((item) => item && typeof item === "object");
   return [];
 }
@@ -1017,30 +1023,82 @@ function formatDateOnly(value) {
   }).format(date);
 }
 
+function localizedLabel(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value.trim();
+  if (Array.isArray(value)) return value.map(localizedLabel).find(Boolean) || "";
+  if (typeof value === "object") {
+    for (const key of ["ru", "RU", "en", "EN", "text", "TEXT", "value", "VALUE"]) {
+      const label = localizedLabel(value[key]);
+      if (label) return label;
+    }
+    return Object.values(value).map(localizedLabel).find(Boolean) || "";
+  }
+  return String(value).trim();
+}
+
+function isSymbolicFieldLabel(label, normalizedId) {
+  const text = String(label || "").trim();
+  if (!text) return true;
+  const upper = text.toUpperCase();
+  return upper === normalizedId || /^UF_CRM(_|$)/i.test(text) || /^UFCRM[A-Z0-9_]+$/i.test(text);
+}
+
+function firstHumanLabel(field, normalizedId) {
+  const directKeys = [
+    "formLabel",
+    "FORM_LABEL",
+    "EDIT_FORM_LABEL",
+    "editFormLabel",
+    "LIST_COLUMN_LABEL",
+    "listColumnLabel",
+    "LIST_FILTER_LABEL",
+    "listFilterLabel",
+    "LANG_EDIT_FORM_LABEL",
+    "LANG_LIST_COLUMN_LABEL",
+    "LANG_LIST_FILTER_LABEL",
+    "label",
+    "LABEL",
+    "name",
+    "NAME",
+    "title",
+    "TITLE",
+  ];
+  for (const key of directKeys) {
+    const label = localizedLabel(field?.[key]);
+    if (!isSymbolicFieldLabel(label, normalizedId)) return label;
+  }
+  for (const [key, value] of Object.entries(field || {})) {
+    if (!/(LABEL|TITLE|NAME)/i.test(key)) continue;
+    const label = localizedLabel(value);
+    if (!isSymbolicFieldLabel(label, normalizedId)) return label;
+  }
+  return "";
+}
+
 function fieldLabel(field, userFieldLabels) {
   const id = String(field.FIELD_NAME || field.fieldName || "");
   const normalizedId = normalizeFieldName(id);
   const defaultLabel = defaultFieldLabels.get(normalizedId);
   if (defaultLabel) return defaultLabel;
 
-  const restLabel = field.title || field.formLabel || field.FORM_LABEL || field.EDIT_FORM_LABEL || field.LIST_COLUMN_LABEL;
-  if (!restLabel || String(restLabel).toUpperCase() === normalizedId) {
-    return userFieldLabels.get(normalizedId) || id;
-  }
-  return (
-    userFieldLabels.get(normalizedId) ||
-    restLabel ||
-    id
-  );
+  const userLabel = userFieldLabels.get(normalizedId);
+  if (userLabel) return userLabel;
+
+  return firstHumanLabel(field, normalizedId) || id;
 }
 
 function renderFields(fields, userFields, settings) {
   const userFieldLabels = new Map(
     userFields
-      .map((field) => [
-        String(field.FIELD_NAME || "").toUpperCase(),
-        field.EDIT_FORM_LABEL || field.LIST_COLUMN_LABEL || field.LIST_FILTER_LABEL || defaultFieldLabels.get(String(field.FIELD_NAME || "").toUpperCase()) || field.FIELD_NAME,
-      ])
+      .map((field) => {
+        const fieldName = normalizeFieldName(field.FIELD_NAME || field.fieldName || field.ID || field.id);
+        const label = firstHumanLabel(field, fieldName);
+        return [
+          fieldName,
+          label || defaultFieldLabels.get(fieldName) || fieldName,
+        ];
+      })
       .filter(([fieldName]) => fieldName),
   );
   const available = Object.entries(fields)
@@ -1093,8 +1151,16 @@ async function ensureFields() {
     if (existingField?.ID) await callMethod("crm.deal.userfield.update", { id: existingField.ID, fields: updateFields });
     else await callMethod("crm.deal.userfield.add", { fields: createFields });
   }
-  await saveSettings(defaultSettings);
-  return configureDealCardSection(defaultSettings);
+  const existingSettings = await loadSettings();
+  const settings = {
+    ...existingSettings,
+    issuedField: defaultSettings.issuedField,
+    paidField: defaultSettings.paidField,
+    unpaidField: defaultSettings.unpaidField,
+    remainingField: defaultSettings.remainingField,
+  };
+  await saveSettings(settings);
+  return configureDealCardSection(settings);
 }
 
 async function getInvoices(dealId) {
@@ -1137,14 +1203,49 @@ async function getRecentInvoiceDealIds(days) {
   return { since, invoiceCount: invoices.length, dealIds, attempts };
 }
 
+async function getRecentDeals(days, settings) {
+  const since = new Date(Date.now() - normalizeWindowDays(days) * 24 * 60 * 60 * 1000).toISOString();
+  const attempts = [];
+  const deals = [];
+  const select = ["ID", "TITLE", "OPPORTUNITY", "STAGE_ID", "CATEGORY_ID", "DATE_CREATE", "BEGINDATE"];
+  const selectedCategory = settingsCategoryId(settings);
+  const categoryFilter = selectedCategory === "all" ? {} : { CATEGORY_ID: selectedCategory };
+  for (const fieldName of ["DATE_CREATE", "BEGINDATE"]) {
+    try {
+      const rows = await callList("crm.deal.list", {
+        order: { [fieldName]: "DESC" },
+        filter: { ...categoryFilter, [`>=${fieldName}`]: since },
+        select,
+      });
+      attempts.push({ method: "crm.deal.list", filter: `>=${fieldName}`, ok: true, count: rows.length });
+      deals.push(...rows);
+    } catch (error) {
+      attempts.push({ method: "crm.deal.list", filter: `>=${fieldName}`, ok: false, error: error.message });
+    }
+  }
+  const byId = new Map(
+    deals
+      .map((deal) => [Number(deal.ID || deal.id), deal])
+      .filter(([dealId]) => Number.isFinite(dealId) && dealId > 0),
+  );
+  const dealIds = [...byId.keys()];
+  return { since, dealCount: dealIds.length, dealIds, deals: [...byId.values()], attempts };
+}
+
 async function recalculateDealsInWindow() {
   const days = normalizeWindowDays(autoRecalcWindowDays.value);
   const settings = await loadSettings();
   currentSettings = { ...settings, autoRecalcWindowDays: days };
   recentButton.disabled = true;
-  setAutomationProgress("Ищу счета в выбранном окне...", 10);
+  setAutomationProgress("Ищу сделки в выбранном окне...", 10);
   try {
-    const recent = await getRecentInvoiceDealIds(days);
+    const [recent, invoiceWindow] = await Promise.all([
+      getRecentDeals(days, currentSettings),
+      getRecentInvoiceDealIds(days),
+    ]);
+    recent.invoiceCount = invoiceWindow.invoiceCount;
+    recent.invoiceDealIds = invoiceWindow.dealIds;
+    recent.attempts = [...recent.attempts, ...invoiceWindow.attempts];
     automationTracked.textContent = String(recent.dealIds.length);
     if (!recent.dealIds.length) {
       setAutomationProgress("Сделок для пересчёта не найдено", 100, { tone: "warning" });
@@ -1180,7 +1281,7 @@ async function recalculateDealsInWindow() {
     const ok = results.every((result) => result.ok);
     setAutomationProgress(ok ? "Пересчёт сделок завершён" : "Пересчёт завершён с ошибками", 100, { tone: ok ? "success" : "warning" });
     automationLastRun.textContent = formatLastRun(new Date().toISOString());
-    const includedDealCount = results.filter((result) => !result.skippedCategory).length;
+    const includedDealCount = results.filter((result) => result.ok && !result.skippedCategory).length;
     automationTracked.textContent = String(includedDealCount);
     const report = { appVersion, ok, operation: "marketplace-window-recalculate", days, settings: currentSettings, ...recent, dealCount: includedDealCount, results };
     renderWindowSummary(report);
@@ -1575,7 +1676,6 @@ form.addEventListener("submit", async (event) => {
     const settings = { ...existingSettings, ...Object.fromEntries(new FormData(form)) };
     settings.includeNegativeStages = form.includeNegativeStages.checked;
     settings.autoRecalcMode = "onChange";
-    settings.autoRecalcWindowDays = normalizeWindowDays(autoRecalcWindowDays.value);
     await saveSettings(settings);
     currentSettings = settings;
     let card = null;

@@ -134,7 +134,7 @@ p {
 
 .setup-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.08fr) minmax(420px, .92fr);
+  grid-template-columns: minmax(0, 1.1fr) minmax(500px, .9fr);
   gap: 10px;
   margin-bottom: 6px;
 }
@@ -314,6 +314,10 @@ button:disabled {
   line-height: 1.25;
 }
 
+#automationTracked {
+  justify-self: center;
+}
+
 .automation-title-row,
 .modal-title-row {
   display: flex;
@@ -374,6 +378,14 @@ button:disabled {
   width: 100%;
   white-space: normal;
   text-align: center;
+}
+
+.automation-panel:not(:has(.window-summary:not([hidden]))) .automation-title-row,
+.automation-panel:not(:has(.window-summary:not([hidden]))) .automation-list,
+.automation-panel:not(:has(.window-summary:not([hidden]))) .automation-progress,
+.automation-panel:not(:has(.window-summary:not([hidden]))) .automation-actions {
+  width: min(100%, 520px);
+  justify-self: center;
 }
 
 .automation-panel .stats-button {

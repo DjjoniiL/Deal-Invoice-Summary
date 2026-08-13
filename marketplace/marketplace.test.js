@@ -33,15 +33,17 @@ test("marketplace archive has static Bitrix24 entry files", () => {
   assert.match(installHtml, /install\.js/);
   assert.match(indexHtml, /style\.css/);
   assert.match(indexHtml, /app\.js/);
-  assert.match(settingsHtml, /settings\.js\?v=layout-20260813-3/);
-  assert.match(settingsHtml, /style\.css\?v=layout-20260813-3/);
-  assert.match(indexHtml, /app\.js\?v=layout-20260813-3/);
-  assert.match(indexHtml, /style\.css\?v=layout-20260813-3/);
-  assert.match(workerHtml, /worker\.js\?v=layout-20260813-3/);
-  assert.match(indexHtml, /Deal Invoice Summary v\.17 Marketplace B24/);
+  assert.match(settingsHtml, /settings\.js\?v=layout-20260813-4/);
+  assert.match(settingsHtml, /style\.css\?v=layout-20260813-4/);
+  assert.match(indexHtml, /app\.js\?v=layout-20260813-4/);
+  assert.match(indexHtml, /style\.css\?v=layout-20260813-4/);
+  assert.match(workerHtml, /worker\.js\?v=layout-20260813-4/);
+  assert.match(indexHtml, /Deal Invoice Summary v\.18 Marketplace B24/);
   assert.match(installHtml, /api\.bitrix24\.com\/api\/v1/);
   assert.match(indexHtml, /api\.bitrix24\.com\/api\/v1/);
   assert.match(settingsHtml, /api\.bitrix24\.com\/api\/v1/);
+  assert.match(settingsHtml, /loader_9_no7zeu\.js/);
+  assert.doesNotMatch(indexHtml, /loader_9_no7zeu\.js/);
   assert.match(workerHtml, /api\.bitrix24\.com\/api\/v1/);
   assert.match(workerErrorHtml, /OK/);
 });
@@ -61,17 +63,24 @@ test("marketplace installer binds left menu and background worker then completes
   assert.match(installJs, /crm\.category\.list/);
   assert.match(installJs, /dealInvoiceSummaryDealCategories/);
   assert.match(installJs, /function cacheDealCategories/);
+  assert.match(installJs, /placement\.unbind/);
+  assert.match(installJs, /function bindPlacement/);
+  assert.match(installJs, /function unbindPlacementAll/);
+  assert.match(installJs, /maxAttempts = 5/);
+  assert.match(installJs, /function isPlacementMaxCountError/);
   assert.match(installJs, /errorHandlerUrl/);
   assert.match(installJs, /ERROR_PLACEMENT_MAX_COUNT/);
+  assert.match(installJs, /Placement max count/);
   assert.doesNotMatch(installJs, /CRM_DEAL_DETAIL_TAB/);
   assert.match(installJs, /BX24\.installFinish/);
-  assert.match(installJs, /INSTALL_STEP_DELAY_MS = 4000/);
+  assert.match(installJs, /INSTALL_STEP_DELAY_MS = 2500/);
   assert.match(installJs, /logNode\.textContent \+=/);
   assert.match(installJs, /await wait\(INSTALL_STEP_DELAY_MS\)/);
 });
 
 test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () => {
   assert.match(appJs, /crm\.deal\.get/);
+  assert.match(appJs, /crm\.deal\.list/);
   assert.match(appJs, /crm\.item\.list/);
   assert.match(appJs, /crm\.deal\.update/);
   assert.match(appJs, /crm\.deal\.userfield\.add/);
@@ -88,9 +97,15 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
   assert.match(appJs, /deal_invoice_summary/);
   assert.match(appJs, /function defaultDealCardLayout/);
   assert.match(appJs, /defaultFieldLabels/);
+  assert.match(appJs, /function localizedLabel/);
+  assert.match(appJs, /function firstHumanLabel/);
+  assert.match(appJs, /function isSymbolicFieldLabel/);
+  assert.match(appJs, /const userLabel = userFieldLabels\.get\(normalizedId\)/);
+  assert.match(appJs, /LANG_EDIT_FORM_LABEL/);
+  assert.match(appJs, /Array\.isArray\(value\)/);
   assert.match(appJs, /if \(defaultLabel\) return defaultLabel/);
-  assert.match(appJs, /layout-20260813-3/);
-  assert.match(appJs, /Deal Invoice Summary v\.17 Marketplace B24/);
+  assert.match(appJs, /layout-20260813-4/);
+  assert.match(appJs, /Deal Invoice Summary v\.18 Marketplace B24/);
   assert.match(appJs, /operation: "manual-recalculate"/);
   assert.match(appJs, /operation: "ensure-fields"/);
   assert.match(appJs, /operation: "save-mapping"/);
@@ -101,8 +116,8 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
 });
 
 test("marketplace background worker watches open deal pages without backend", () => {
-  assert.match(workerJs, /layout-20260813-3/);
-  assert.match(workerJs, /Deal Invoice Summary v\.17 Marketplace B24/);
+  assert.match(workerJs, /layout-20260813-4/);
+  assert.match(workerJs, /Deal Invoice Summary v\.18 Marketplace B24/);
   assert.match(workerJs, /BX24\?\.placement\?\.info/);
   assert.match(workerJs, /PLACEMENT_OPTIONS/);
   assert.match(workerJs, /PAGE_BACKGROUND_WORKER/);
@@ -225,7 +240,7 @@ test("marketplace automation panel presents mass recalculation and statistics", 
   assert.match(indexHtml, /id="viewWindowStats"/);
   assert.match(indexHtml, /Посмотреть статистику/);
   assert.match(indexHtml, /downloadWindowReport/);
-  assert.match(indexHtml, /loader_9_no7zeu\.js/);
+  assert.doesNotMatch(indexHtml, /loader_9_no7zeu\.js/);
   assert.doesNotMatch(indexHtml, /class="server-only"/);
   assert.match(indexHtml, /42 суток/);
   assert.match(indexHtml, /class="visually-hidden" type="button" disabled tabindex="-1">Автопересчёт доступен с сервером/);
@@ -234,6 +249,12 @@ test("marketplace automation panel presents mass recalculation and statistics", 
   assert.match(indexHtml, /id="automationProgress" class="automation-progress" hidden/);
   assert.match(appJs, /marketplace-window-recalculate/);
   assert.match(appJs, /function recalculateDealsInWindow/);
+  assert.match(appJs, /function getRecentDeals/);
+  assert.match(appJs, /getRecentDeals\(days, currentSettings\)/);
+  assert.match(appJs, /crm\.deal\.list/);
+  assert.match(appJs, /getRecentInvoiceDealIds\(days\)/);
+  assert.match(appJs, /recent\.invoiceDealIds = invoiceWindow\.dealIds/);
+  assert.match(appJs, /filter:\s*\{ \.\.\.categoryFilter, \[`>=\$\{fieldName\}`\]: since \}/);
   assert.match(appJs, /function downloadWindowReport/);
   assert.match(appJs, /function buildWindowSummary/);
   assert.match(appJs, /function renderWindowSummary/);
@@ -257,6 +278,7 @@ test("marketplace automation panel presents mass recalculation and statistics", 
   assert.match(appJs, /const dealAmount = money\(item\.summary\?\.dealAmount\)/);
   assert.match(appJs, /acc\.amounts\[group\] \+= dealAmount/);
   assert.match(appJs, /const dealSemantic = dealStageSemantic\(dealStageId\)/);
+  assert.match(appJs, /if \(!invoiceCount\) group = "empty"/);
   assert.match(appJs, /skippedCategory: Boolean\(result\.skippedCategory\)/);
   assert.match(appJs, /summary\.status\.amounts\.paid/);
   assert.match(appJs, /invoiceAnalyticsTitle\.textContent = `Аналитика счетов за период \$\{report\.days\} суток`/);
@@ -264,11 +286,14 @@ test("marketplace automation panel presents mass recalculation and statistics", 
   assert.doesNotMatch(appJs, /percentOf/);
   assert.match(appJs, /automationMode\.value = "onChange"/);
   assert.match(appJs, /settings\.autoRecalcMode = "onChange"/);
+  assert.doesNotMatch(appJs, /await saveSettings\(defaultSettings\)/);
+  assert.doesNotMatch(appJs, /settings\.autoRecalcWindowDays = normalizeWindowDays\(autoRecalcWindowDays\.value\)/);
   assert.doesNotMatch(appJs, /"Ошибки", "Неразрешённые стадии"/);
   assert.doesNotMatch(appJs, /\(item\.stageLookup\?\.unresolved \|\| \[\]\)\.join\(", "\)/);
   assert.match(appJs, /function showWindowReportModal/);
   assert.match(appJs, /function loadServerSupport/);
   assert.match(appJs, /function openOpenLine/);
+  assert.match(appJs, /window\.location\.href = marketplaceFileUrl\(settingsPageFileName\)/);
   assert.match(appJs, /dealInvoiceSummaryServerSupport/);
   assert.match(appJs, /if \(serverSupport\.connected\) return/);
   assert.match(appJs, /const serverOnlyModes = \["continuous", "twiceDaily"\]/);
@@ -304,11 +329,13 @@ test("marketplace automation panel presents mass recalculation and statistics", 
   assert.doesNotMatch(appJs, /CSV-отчёт сформирован автоматически/);
   assert.match(appJs, /deal-invoice-window-\$\{source\.days\}-days\.csv/);
   assert.match(appJs, />=\$\{fieldName\}/);
-  assert.match(styleCss, /\.setup-grid\s*{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1\.08fr\) minmax\(420px,\s*\.92fr\)/);
+  assert.match(styleCss, /\.setup-grid\s*{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1\.1fr\) minmax\(500px,\s*\.9fr\)/);
+  assert.match(styleCss, /\.automation-panel:not\(:has\(\.window-summary:not\(\[hidden\]\)\)\) \.automation-title-row/);
   assert.match(styleCss, /\.automation-panel button\s*{[\s\S]*width:\s*100%/);
   assert.match(styleCss, /\.automation-panel \.stats-button\s*{[\s\S]*width:\s*38px/);
   assert.match(styleCss, /\.automation-panel button\s*{[\s\S]*white-space:\s*normal/);
   assert.match(styleCss, /\.automation-list strong\s*{[\s\S]*overflow-wrap:\s*anywhere/);
+  assert.match(styleCss, /#automationTracked\s*{[\s\S]*justify-self:\s*center/);
   assert.match(styleCss, /\.automation-title-row/);
   assert.match(styleCss, /\.automation-category/);
   assert.match(styleCss, /\.settings-link-button/);

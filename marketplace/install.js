@@ -1,10 +1,10 @@
 const statusNode = document.querySelector("#status");
 const installButton = document.querySelector("#installButton");
 const logNode = document.querySelector("#log");
-const INSTALL_STEP_DELAY_MS = 4000;
+const INSTALL_STEP_DELAY_MS = 2500;
 
-const RUNTIME_VERSION = "layout-20260813-3";
-const APP_VERSION = "Deal Invoice Summary v.17 Marketplace B24"; // синхронизировать с app.js
+const RUNTIME_VERSION = "layout-20260813-4";
+const APP_VERSION = "Deal Invoice Summary v.18 Marketplace B24"; // синхронизировать с app.js
 
 function appUrl(fileName = "index.html") {
   const url = new URL(window.location.href);
@@ -39,6 +39,55 @@ function wait(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function isPlacementMaxCountError(error) {
+  return /ERROR_PLACEMENT_MAX_COUNT|Placement max count/i.test(error?.message || "");
+}
+
+async function unbindPlacement(placement) {
+  try {
+    const result = await callMethod("placement.unbind", { PLACEMENT: placement });
+    writeLog({ step: "placement-unbind", placement, ok: true, result, message: "Старая привязка placement снята перед повторной регистрацией" });
+    return { ok: true, result };
+  } catch (error) {
+    writeLog({ step: "placement-unbind", placement, ok: false, error: error.message, message: "Старую привязку placement снять не удалось, продолжаю регистрацию" });
+    return { ok: false, error: error.message };
+  }
+}
+
+async function unbindPlacementAll(placement, maxAttempts = 5) {
+  const removed = [];
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const result = await unbindPlacement(placement);
+    removed.push(result);
+    const count = Number(result?.result?.count || 0);
+    if (!result.ok || count < 1) break;
+  }
+  return removed;
+}
+
+async function bindPlacement(placement, params, { refreshBeforeBind = false } = {}) {
+  if (refreshBeforeBind) {
+    await unbindPlacementAll(placement);
+  }
+
+  try {
+    const result = await callMethod("placement.bind", { PLACEMENT: placement, ...params });
+    return { ok: true, result, rebound: refreshBeforeBind };
+  } catch (error) {
+    if (!isPlacementMaxCountError(error)) {
+      throw error;
+    }
+
+    const unbind = await unbindPlacementAll(placement);
+    if (!unbind.some((item) => item.ok)) {
+      return { ok: true, alreadyBound: true, error: error.message, unbind };
+    }
+
+    const result = await callMethod("placement.bind", { PLACEMENT: placement, ...params });
+    return { ok: true, result, rebound: true, previousError: error.message };
+  }
 }
 
 function normalizeDealCategory(category) {
@@ -82,13 +131,13 @@ async function finishInstall() {
   statusNode.textContent = "Регистрирую пункт левого меню...";
   let leftMenu = null;
   try {
-    const result = await callMethod("placement.bind", {
-      PLACEMENT: "LEFT_MENU",
+    leftMenu = await bindPlacement("LEFT_MENU", {
       HANDLER: handler,
       TITLE: "Расчёт оплаты счетов",
+    }, {
+      refreshBeforeBind: true,
     });
-    leftMenu = { ok: true, result };
-    writeLog({ step: "left-menu", ok: true, result, message: "Пункт левого меню зарегистрирован" });
+    writeLog({ step: "left-menu", ...leftMenu, message: leftMenu.rebound ? "Пункт левого меню обновлён и зарегистрирован" : "Пункт левого меню зарегистрирован" });
   } catch (error) {
     leftMenu = { ok: false, error: error.message };
     writeLog({ step: "left-menu", ok: false, error: error.message, message: "Ошибка регистрации левого меню" });
@@ -100,22 +149,24 @@ async function finishInstall() {
   statusNode.textContent = "Регистрирую фоновый монитор карточек сделок...";
   let backgroundWorker = null;
   try {
-    const result = await callMethod("placement.bind", {
-      PLACEMENT: "PAGE_BACKGROUND_WORKER",
+    backgroundWorker = await bindPlacement("PAGE_BACKGROUND_WORKER", {
       HANDLER: backgroundHandler,
       OPTIONS: {
         errorHandlerUrl: backgroundErrorHandler,
       },
     });
-    backgroundWorker = { ok: true, result };
     writeLog({
       step: "background-worker",
-      ok: true,
-      result,
-      message: "PAGE_BACKGROUND_WORKER зарегистрирован",
+      ...backgroundWorker,
+      handler: backgroundHandler,
+      message: backgroundWorker.alreadyBound
+        ? "PAGE_BACKGROUND_WORKER уже зарегистрирован для приложения"
+        : backgroundWorker.rebound
+          ? "PAGE_BACKGROUND_WORKER обновлён и зарегистрирован"
+          : "PAGE_BACKGROUND_WORKER зарегистрирован",
     });
   } catch (error) {
-    const alreadyBound = /ERROR_PLACEMENT_MAX_COUNT/i.test(error.message || "");
+    const alreadyBound = isPlacementMaxCountError(error);
     backgroundWorker = {
       ok: alreadyBound,
       alreadyBound,
