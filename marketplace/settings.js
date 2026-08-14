@@ -1,5 +1,5 @@
-const runtimeVersion = "layout-20260814-3";
-const appVersion = "Deal Invoice Summary v.21 Marketplace B24";
+const runtimeVersion = "layout-20260814-7";
+const appVersion = "Deal Invoice Summary v.25 Marketplace B24";
 const defaultSettings = {
   includeNegativeStages: false,
   issuedField: "UF_CRM_INV_SUM_ISSUED",
@@ -19,6 +19,9 @@ const portalNode = document.querySelector("#settingsPortal");
 const backButton = document.querySelector("#backToApp");
 const saveButton = document.querySelector("#saveAppSettings");
 const refreshButton = document.querySelector("#refreshDealCategories");
+const windowPeriodHelpButton = document.querySelector("#windowPeriodHelp");
+const periodHelpModal = document.querySelector("#periodHelpModal");
+const closePeriodHelpButton = document.querySelector("#closePeriodHelp");
 
 function callMethod(method, params = {}) {
   return new Promise((resolve, reject) => {
@@ -111,6 +114,33 @@ function normalizeWindowDays(value) {
   return allowed.includes(days) ? days : 30;
 }
 
+function showPeriodHelp() {
+  periodHelpModal.hidden = false;
+}
+
+function hidePeriodHelp() {
+  periodHelpModal.hidden = true;
+}
+
+function openOpenLineFromSettings(attempt = 0) {
+  const selectors = [
+    ".b24-widget-button-openline_livechat",
+    ".b24-widget-button-social-item",
+    ".b24-widget-button-inner-container",
+    ".b24-widget-button-wrapper",
+  ];
+  const target = selectors.map((selector) => document.querySelector(selector)).find(Boolean);
+  if (target) {
+    target.click();
+    return;
+  }
+  if (attempt < 24) window.setTimeout(() => openOpenLineFromSettings(attempt + 1), 500);
+}
+
+function shouldOpenChat() {
+  return new URLSearchParams(window.location.search).get("openChat") === "1";
+}
+
 async function initSettings({ refresh = false } = {}) {
   statusNode.textContent = refresh ? "Обновляю список воронок..." : "Загружаю настройки...";
   const [settings, categories] = await Promise.all([
@@ -147,6 +177,7 @@ function init() {
   }
   BX24.init(() => {
     portalNode.textContent = `${BX24.getDomain?.() || ""} · ${appVersion}`;
+    if (shouldOpenChat()) openOpenLineFromSettings();
     initSettings().catch((error) => {
       statusNode.textContent = `Ошибка загрузки: ${error.message}`;
     });
@@ -160,5 +191,10 @@ saveButton.addEventListener("click", saveAppSettings);
 refreshButton.addEventListener("click", () => initSettings({ refresh: true }).catch((error) => {
   statusNode.textContent = `Ошибка обновления: ${error.message}`;
 }));
+windowPeriodHelpButton.addEventListener("click", showPeriodHelp);
+closePeriodHelpButton.addEventListener("click", hidePeriodHelp);
+periodHelpModal.addEventListener("click", (event) => {
+  if (event.target === periodHelpModal) hidePeriodHelp();
+});
 
 init();

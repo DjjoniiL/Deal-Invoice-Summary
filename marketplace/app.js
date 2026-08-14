@@ -8,8 +8,8 @@ const defaultSettings = {
   autoRecalcWindowDays: 30,
   calculationCategoryId: "all",
 };
-const runtimeVersion = "layout-20260814-3";
-const appVersion = "Deal Invoice Summary v.21 Marketplace B24";
+const runtimeVersion = "layout-20260814-7";
+const appVersion = "Deal Invoice Summary v.25 Marketplace B24";
 const dealSummarySectionName = "deal_invoice_summary";
 const dealSummarySectionTitle = "Расчёт оплаты счетов";
 const defaultFieldLabels = new Map([
@@ -46,6 +46,7 @@ const automationProgress = document.querySelector("#automationProgress");
 const automationProgressText = document.querySelector("#automationProgressText");
 const automationProgressValue = document.querySelector("#automationProgressValue");
 const automationProgressBar = document.querySelector("#automationProgressBar");
+const automationElapsed = document.querySelector("#automationElapsed");
 const recentButton = document.querySelector("#recent");
 const serverStatusButton = document.querySelector("#serverStatusButton");
 const serverSupportModal = document.querySelector("#serverSupportModal");
@@ -103,6 +104,8 @@ let lastWindowReport = null;
 let windowReportState = null;
 let windowChartState = { slices: [], hoveredIndex: -1 };
 let pendingWindowCalculation = null;
+let automationElapsedTimer = null;
+let automationElapsedStart = 0;
 let currentContextDealId = null;
 let contextDealSnapshot = null;
 let contextDealMonitorTimer = null;
@@ -206,13 +209,17 @@ function openOpenLine() {
     target.click();
     return;
   }
-  window.location.href = marketplaceFileUrl(settingsPageFileName);
+  window.location.href = marketplaceFileUrl(settingsPageFileName, { openChat: "1" });
 }
 
-function marketplaceFileUrl(fileName) {
+function marketplaceFileUrl(fileName, extraParams = {}) {
   const url = new URL(window.location.href);
   url.pathname = url.pathname.replace(/[^/]*$/i, fileName);
-  url.search = `?v=${runtimeVersion}`;
+  url.search = "";
+  url.searchParams.set("v", runtimeVersion);
+  for (const [key, value] of Object.entries(extraParams)) {
+    if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, String(value));
+  }
   url.hash = "";
   return url.toString();
 }
@@ -227,17 +234,26 @@ function hideWindowReportModal() {
   windowReportModal.hidden = true;
 }
 
-function estimateCalculationMinutes(dealCount) {
+function formatProcessingTime(totalSeconds) {
+  const seconds = Math.max(0, Math.round(Number(totalSeconds) || 0));
+  const minutes = Math.floor(seconds / 60);
+  const restSeconds = seconds % 60;
+  if (minutes <= 0) return `${restSeconds} сек`;
+  return `${minutes} мин ${restSeconds} сек`;
+}
+
+function estimateCalculationSeconds(dealCount) {
   const count = Number(dealCount) || 0;
   if (count <= 0) return 0;
-  return Math.max(5, Math.ceil(count / 20) * 5);
+  const secondsPerDeal = 15;
+  return Math.max(30, Math.ceil((count * secondsPerDeal) / 30) * 30);
 }
 
 function showWindowConfirmModal(preflight) {
   pendingWindowCalculation = preflight;
   const dealCount = preflight.recent.dealIds.length;
-  const minutes = estimateCalculationMinutes(dealCount);
-  windowConfirmText.textContent = `В расчётный период попало сделок: ${dealCount}. Предварительная оценка времени расчёта: ${minutes} мин. Запускаем расчёт?`;
+  const estimate = formatProcessingTime(estimateCalculationSeconds(dealCount));
+  windowConfirmText.textContent = `В расчётный период попало сделок: ${dealCount}. Предварительная оценка времени расчёта: ${estimate}. Запускаем расчёт?`;
   windowConfirmModal.hidden = false;
 }
 
@@ -254,6 +270,34 @@ function setAutomationProgress(text, percent, { visible = true, tone = "active" 
   automationProgressText.textContent = text;
   automationProgressValue.textContent = `${safePercent}%`;
   automationProgressBar.style.width = `${safePercent}%`;
+}
+
+function updateAutomationElapsed() {
+  if (!automationElapsedStart) return;
+  const elapsedSeconds = Math.floor((Date.now() - automationElapsedStart) / 5000) * 5;
+  automationElapsed.textContent = `Время обработки: ${formatProcessingTime(elapsedSeconds)}.`;
+}
+
+function startAutomationElapsed() {
+  stopAutomationElapsed();
+  automationElapsedStart = Date.now();
+  automationElapsed.hidden = false;
+  updateAutomationElapsed();
+  automationElapsedTimer = window.setInterval(updateAutomationElapsed, 1000);
+}
+
+function stopAutomationElapsed({ hide = true } = {}) {
+  if (automationElapsedTimer) window.clearInterval(automationElapsedTimer);
+  automationElapsedTimer = null;
+  if (hide) automationElapsed.hidden = true;
+}
+
+function finishAutomationElapsed() {
+  if (!automationElapsedStart) return 0;
+  const elapsedSeconds = Math.round((Date.now() - automationElapsedStart) / 1000);
+  stopAutomationElapsed();
+  automationElapsedStart = 0;
+  return elapsedSeconds;
 }
 
 function buildWindowSummary(report) {
@@ -274,13 +318,11 @@ function buildWindowSummary(report) {
       return acc;
     }
     const invoiceCount = Number(item.summary?.invoiceCount || 0);
-    const dealAmount = money(item.summary?.dealAmount);
-    const dealStageId = String(item.deal?.STAGE_ID || item.deal?.stageId || "").trim();
-    const dealSemantic = dealStageSemantic(dealStageId);
+    const dealSemantic = dealSemanticFromResult(item);
     let group = dealSemantic === "S" ? "paid" : "unpaid";
     if (!invoiceCount) group = "empty";
     acc.counts[group] += 1;
-    acc.amounts[group] += dealAmount;
+    acc.amounts[group] += windowStatusAmount(item, group);
     return acc;
   }, {
     counts: { paid: 0, unpaid: 0, empty: 0, error: 0 },
@@ -363,9 +405,9 @@ function drawDealStatusChart(hoveredIndex = -1) {
 
 function renderDealStatusChart(summary) {
   const statuses = [
-    { key: "paid", label: "Завершены", value: summary.status.counts.paid, color: "#23b47e" },
-    { key: "unpaid", label: "Ожидают доплаты", value: summary.status.counts.unpaid, color: "#2b7de9" },
-    { key: "empty", label: "Без счетов", value: summary.status.counts.empty, color: "#d0d5dd" },
+    { key: "paid", label: "Завершено сделок", value: summary.status.counts.paid, color: "#23b47e" },
+    { key: "unpaid", label: "Сделок ожидают доплаты", value: summary.status.counts.unpaid, color: "#2b7de9" },
+    { key: "empty", label: "Сделок без счетов", value: summary.status.counts.empty, color: "#d0d5dd" },
   ];
   const total = statuses.reduce((sum, item) => sum + item.value, 0);
   const radius = 252;
@@ -515,6 +557,29 @@ function dealStageSemantic(stageId) {
   if (suffix === "WON") return "S";
   if (suffix === "LOSE" || suffix === "LOST" || suffix === "D") return "F";
   return "P";
+}
+
+function dealSemanticFromResult(item) {
+  const semantic = String(
+    item.deal?.STAGE_SEMANTIC_ID
+      || item.deal?.stageSemanticId
+      || item.deal?.SEMANTIC_ID
+      || item.deal?.semanticId
+      || "",
+  ).trim().toUpperCase();
+  if (semantic === "S" || semantic === "SUCCESS") return "S";
+  if (semantic === "F" || semantic === "FAILURE") return "F";
+  return dealStageSemantic(item.deal?.STAGE_ID || item.deal?.stageId || "");
+}
+
+function windowStatusAmount(item, group) {
+  const dealAmount = money(item.summary?.dealAmount);
+  if (dealAmount) return dealAmount;
+  const directDealAmount = money(item.deal?.OPPORTUNITY ?? item.deal?.opportunity);
+  if (directDealAmount) return directDealAmount;
+  if (group === "paid") return money(item.summary?.paid || item.summary?.issued);
+  if (group === "unpaid") return money(item.summary?.remaining || item.summary?.unpaid || item.summary?.issued);
+  return money(item.summary?.issued);
 }
 
 function dealCategoryId(deal) {
@@ -1355,7 +1420,7 @@ async function getRecentDeals(days, settings) {
   const since = new Date(Date.now() - normalizeWindowDays(days) * 24 * 60 * 60 * 1000).toISOString();
   const attempts = [];
   const deals = [];
-  const select = ["ID", "TITLE", "OPPORTUNITY", "STAGE_ID", "CATEGORY_ID", "DATE_CREATE", "BEGINDATE"];
+  const select = ["ID", "TITLE", "OPPORTUNITY", "STAGE_ID", "STAGE_SEMANTIC_ID", "SEMANTIC_ID", "CATEGORY_ID", "DATE_CREATE", "BEGINDATE"];
   const selectedCategory = settingsCategoryId(settings);
   const categoryFilter = selectedCategory === "all" ? {} : { CATEGORY_ID: selectedCategory };
   for (const fieldName of ["DATE_CREATE", "BEGINDATE"]) {
@@ -1407,11 +1472,14 @@ async function recalculateDealsInWindow() {
 async function runWindowCalculation(preflight) {
   const { days, recent } = preflight;
   recentButton.disabled = true;
+  startAutomationElapsed();
   try {
     if (!recent.dealIds.length) {
-      setAutomationProgress("Сделок для пересчёта не найдено", 100, { tone: "warning" });
+      const elapsedSeconds = finishAutomationElapsed();
+      const elapsedText = formatProcessingTime(elapsedSeconds);
+      setAutomationProgress(`Сделок для пересчёта не найдено. Время обработки ${elapsedText}.`, 100, { tone: "warning" });
       automationLastRun.textContent = formatLastRun(new Date().toISOString());
-      const report = { appVersion, ok: true, operation: "marketplace-window-recalculate", days, settings: currentSettings, ...recent, dealCount: 0, results: [] };
+      const report = { appVersion, ok: true, operation: "marketplace-window-recalculate", days, settings: currentSettings, ...recent, dealCount: 0, results: [], processingTimeSeconds: elapsedSeconds };
       renderWindowSummary(report);
       write({ ...report, message: "Сделок за выбранный период нет. Отчёт сформирован и готов к скачиванию." });
       showWindowReportModal(report);
@@ -1440,15 +1508,18 @@ async function runWindowCalculation(preflight) {
     }
 
     const ok = results.every((result) => result.ok);
-    setAutomationProgress(ok ? "Пересчёт сделок завершён" : "Пересчёт завершён с ошибками", 100, { tone: ok ? "success" : "warning" });
+    const elapsedSeconds = finishAutomationElapsed();
+    const elapsedText = formatProcessingTime(elapsedSeconds);
+    setAutomationProgress(ok ? `Пересчёт сделок завершён. Время обработки ${elapsedText}.` : `Пересчёт завершён с ошибками. Время обработки ${elapsedText}.`, 100, { tone: ok ? "success" : "warning" });
     automationLastRun.textContent = formatLastRun(new Date().toISOString());
     const includedDealCount = results.filter((result) => result.ok && !result.skippedCategory).length;
     automationTracked.textContent = String(includedDealCount);
-    const report = { appVersion, ok, operation: "marketplace-window-recalculate", days, settings: currentSettings, ...recent, dealCount: includedDealCount, results };
+    const report = { appVersion, ok, operation: "marketplace-window-recalculate", days, settings: currentSettings, ...recent, dealCount: includedDealCount, results, processingTimeSeconds: elapsedSeconds };
     renderWindowSummary(report);
     write({ ...report, message: "Пересчёт завершён. Отчёт сформирован и готов к скачиванию." });
     showWindowReportModal(report);
   } catch (error) {
+    finishAutomationElapsed();
     setAutomationProgress("Ошибка пересчёта сделок", 100, { tone: "warning" });
     write({ appVersion, ok: false, operation: "marketplace-window-recalculate", error: error.message });
   } finally {
@@ -1494,6 +1565,10 @@ function sameMoneyValue(left, right) {
   return money(left) === money(right);
 }
 
+function isBlankCrmValue(value) {
+  return value === undefined || value === null || String(value).trim() === "";
+}
+
 function dealChangeSnapshot(deal) {
   return {
     amount: money(deal.OPPORTUNITY ?? deal.opportunity),
@@ -1514,7 +1589,7 @@ function buildChangedDealFields(deal, summary, settings) {
     remainingField: summary.remaining,
   })) {
     const field = settings[key];
-    if (field && !sameMoneyValue(deal[field], value)) fields[field] = value;
+    if (field && (isBlankCrmValue(deal[field]) || !sameMoneyValue(deal[field], value))) fields[field] = value;
   }
   return fields;
 }
@@ -1814,7 +1889,7 @@ async function initApp() {
       ? defaultSetup.card
         ? "Стандартные поля и сопоставление настроены для всех воронок."
         : "Сопоставление готово."
-      : "Сопоставление доступно только администратору CRM.",
+      : "Сопоставление доступно только администратору.",
     canManageMapping ? "success" : "warning",
   );
   write(defaultSetup.card ? { appVersion, operation: "default-setup", dealCard: defaultSetup.card } : "Настройки загружены.");
@@ -1846,7 +1921,7 @@ async function initApp() {
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!canManageMapping) {
-    setMappingStatus("Сопоставление доступно только администратору CRM.", "warning");
+    setMappingStatus("Сопоставление доступно только администратору.", "warning");
     write({ appVersion, ok: false, operation: "save-mapping", error: "CRM admin rights required" }, { reveal: true });
     return;
   }
@@ -1899,7 +1974,7 @@ dealForm.addEventListener("submit", async (event) => {
 
 document.querySelector("#ensureFields").addEventListener("click", async () => {
   if (!canManageMapping) {
-    setMappingStatus("Создание полей доступно только администратору CRM.", "warning");
+    setMappingStatus("Создание полей доступно только администратору.", "warning");
     write({ appVersion, ok: false, operation: "ensure-fields", error: "CRM admin rights required" }, { reveal: true });
     return;
   }

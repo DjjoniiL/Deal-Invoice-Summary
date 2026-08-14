@@ -136,6 +136,7 @@ p {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(500px, .9fr);
   gap: 10px;
+  align-items: start;
   margin-bottom: 6px;
 }
 
@@ -168,6 +169,25 @@ p {
   color: var(--muted);
   font-size: 13px;
   overflow-wrap: anywhere;
+}
+
+.setting-inline-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 8px;
+  align-items: center;
+}
+
+.help-button {
+  width: 34px;
+  height: 34px;
+  font-weight: 700;
+}
+
+.settings-help-modal p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
 }
 
 .panel-tools {
@@ -250,8 +270,8 @@ button:disabled {
   display: grid;
   grid-template-columns: max-content minmax(180px, 1fr) 38px;
   align-items: center;
-  gap: 8px 12px;
-  min-height: 88px;
+  gap: 6px 12px;
+  min-height: 0;
 }
 
 .settings-link-button {
@@ -265,6 +285,7 @@ button:disabled {
   color: #0f7b6c;
   font-size: 13px;
   font-weight: 700;
+  line-height: 1.25;
 }
 
 .visually-hidden {
@@ -294,8 +315,8 @@ button:disabled {
 
 .automation-list {
   display: grid;
-  grid-template-columns: minmax(160px, .85fr) minmax(0, 1fr) minmax(0, 1.2fr);
-  gap: 8px 10px;
+  grid-template-columns: minmax(190px, .95fr) minmax(120px, .65fr) minmax(190px, 1fr);
+  gap: 8px 12px;
   align-items: end;
   color: var(--muted);
   font-size: 13px;
@@ -321,6 +342,7 @@ button:disabled {
 .automation-stat {
   display: grid;
   gap: 3px;
+  align-content: end;
   min-width: 0;
 }
 
@@ -332,16 +354,17 @@ button:disabled {
   color: var(--ink);
   font-size: 14px;
   line-height: 1.25;
+  min-height: 18px;
 }
 
 #automationTracked {
-  justify-self: center;
+  justify-self: start;
 }
 
 .automation-title-row,
 .modal-title-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
@@ -400,6 +423,11 @@ button:disabled {
   text-align: center;
 }
 
+.automation-panel:not(:has(.window-summary:not([hidden]))) {
+  min-height: 240px;
+  align-content: center;
+}
+
 .automation-panel:not(:has(.window-summary:not([hidden]))) .automation-title-row,
 .automation-panel:not(:has(.window-summary:not([hidden]))) .automation-list,
 .automation-panel:not(:has(.window-summary:not([hidden]))) .automation-progress,
@@ -456,6 +484,17 @@ button:disabled {
   border-radius: inherit;
   background: linear-gradient(90deg, #c97a00, #f2a51a);
   transition: width .22s ease;
+}
+
+.automation-elapsed {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.automation-elapsed[hidden] {
+  display: none;
 }
 
 .automation-progress[data-progress="mid"] .automation-progress-track span {

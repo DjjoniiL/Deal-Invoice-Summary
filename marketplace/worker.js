@@ -1,5 +1,5 @@
-const runtimeVersion = "layout-20260814-3";
-const appVersion = "Deal Invoice Summary v.21 Marketplace B24";
+const runtimeVersion = "layout-20260814-7";
+const appVersion = "Deal Invoice Summary v.25 Marketplace B24";
 const defaultSettings = {
   includeNegativeStages: false,
   issuedField: "UF_CRM_INV_SUM_ISSUED",
@@ -59,6 +59,10 @@ function money(value) {
 
 function sameMoneyValue(left, right) {
   return money(left) === money(right);
+}
+
+function isBlankCrmValue(value) {
+  return value === undefined || value === null || String(value).trim() === "";
 }
 
 function dealCategoryId(deal) {
@@ -210,7 +214,7 @@ function buildChangedDealFields(deal, summary, settings) {
     remainingField: summary.remaining,
   })) {
     const field = String(settings[key] || "").trim().toUpperCase();
-    if (field && !sameMoneyValue(deal[field], value)) fields[field] = value;
+    if (field && (isBlankCrmValue(deal[field]) || !sameMoneyValue(deal[field], value))) fields[field] = value;
   }
   return fields;
 }

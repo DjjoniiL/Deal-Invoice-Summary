@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="style.css?v=layout-20260814-3">
+    <link rel="stylesheet" href="style.css?v=layout-20260814-7">
     <title>Калькулятор счетов</title>
     <script src="//api.bitrix24.com/api/v1/"></script>
   </head>
@@ -62,7 +62,7 @@
               <h2>Массовый пересчёт сделок</h2>
             </div>
             <p id="automationCategoryName" class="automation-category">Все воронки</p>
-            <button id="windowStatsButton" class="icon-button stats-button" type="button" title="Статистика периода" aria-label="Статистика периода" disabled>◔</button>
+            <button id="windowStatsButton" class="icon-button stats-button" type="button" title="Статистика сделок за период" aria-label="Статистика сделок за период" disabled>◔</button>
           </div>
           <div class="automation-list">
             <label class="visually-hidden">Режим расчёта
@@ -81,7 +81,7 @@
               </select>
             </label>
             <div class="automation-stat">
-              <span>Отслеживается сделок</span>
+              <span>Сделок в расчёте</span>
               <strong id="automationTracked">0</strong>
             </div>
             <div class="automation-stat">
@@ -103,6 +103,7 @@
             <div class="automation-progress-track">
               <span id="automationProgressBar"></span>
             </div>
+            <div id="automationElapsed" class="automation-elapsed" hidden>Время обработки: 0 сек.</div>
           </div>
           <div class="automation-actions">
             <button id="serverStatusButton" class="visually-hidden" type="button" disabled tabindex="-1">Автопересчёт доступен с сервером</button>
@@ -174,7 +175,7 @@
     <div id="windowStatsModal" class="modal-backdrop" hidden>
       <section class="modal-panel stats-modal" role="dialog" aria-modal="true" aria-labelledby="windowStatsTitle">
         <div class="modal-title-row">
-          <h2 id="windowStatsTitle">Статистика периода</h2>
+          <h2 id="windowStatsTitle">Статистика сделок за период</h2>
           <div class="stats-deal-count">
             <span>Сделок</span>
             <strong id="statsDeals">0</strong>
@@ -185,9 +186,9 @@
         <div class="stats-chart-wrap">
           <canvas id="windowStatsChart" class="donut-chart" width="704" height="704" aria-label="Диаграмма статусов сделок"></canvas>
           <div class="stats-legend">
-            <span><i class="legend-paid"></i>Завершены <strong id="statsPaidAmount">0 ₽</strong></span>
-            <span><i class="legend-unpaid"></i>Ожидают доплаты <strong id="statsUnpaidAmount">0 ₽</strong></span>
-            <span><i class="legend-empty"></i>Без счетов <strong id="statsEmptyAmount">0 ₽</strong></span>
+            <span><i class="legend-paid"></i>Завершено сделок <strong id="statsPaidAmount">0 ₽</strong></span>
+            <span><i class="legend-unpaid"></i>Сделок ожидают доплаты <strong id="statsUnpaidAmount">0 ₽</strong></span>
+            <span><i class="legend-empty"></i>Сделок без счетов <strong id="statsEmptyAmount">0 ₽</strong></span>
           </div>
         </div>
         <div class="invoice-analytics">
@@ -202,9 +203,9 @@
       </section>
     </div>
     <!-- Принудительное обновление версии -->
-    <script src="app.js?v=layout-20260814-3"></script>
+    <script src="app.js?v=layout-20260814-7"></script>
     <div style="font-size:10px;color:#999;text-align:center;margin-top:8px;">
-      Deal Invoice Summary v.21 Marketplace B24
+      Deal Invoice Summary v.25 Marketplace B24
     </div>
   </body>
 </html>
