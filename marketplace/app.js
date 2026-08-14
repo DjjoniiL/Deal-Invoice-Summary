@@ -5,11 +5,11 @@ const defaultSettings = {
   unpaidField: "UF_CRM_INV_SUM_UNPAID",
   remainingField: "UF_CRM_INV_SUM_REMAINING",
   autoRecalcMode: "onOpen",
-  autoRecalcWindowDays: 21,
+  autoRecalcWindowDays: 30,
   calculationCategoryId: "all",
 };
-const runtimeVersion = "layout-20260813-4";
-const appVersion = "Deal Invoice Summary v.18 Marketplace B24";
+const runtimeVersion = "layout-20260814-3";
+const appVersion = "Deal Invoice Summary v.21 Marketplace B24";
 const dealSummarySectionName = "deal_invoice_summary";
 const dealSummarySectionTitle = "Расчёт оплаты счетов";
 const defaultFieldLabels = new Map([
@@ -18,7 +18,10 @@ const defaultFieldLabels = new Map([
   ["UF_CRM_INV_SUM_UNPAID", "Сумма неоплаченных счетов"],
   ["UF_CRM_INV_SUM_REMAINING", "Остаток оплаты сделки"],
 ]);
+const defaultMappingKeys = ["issuedField", "paidField", "unpaidField", "remainingField"];
 const settingsPageFileName = "settings.html";
+const defaultSetupVersionOption = "dealInvoiceSummaryDefaultSetupVersion";
+const userCalculationSettingsOption = "dealInvoiceSummaryUserCalculationSettings";
 
 const moneyFormat = new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 });
 const form = document.querySelector("#settings");
@@ -55,6 +58,10 @@ const windowReportText = document.querySelector("#windowReportText");
 const closeWindowReportModal = document.querySelector("#closeWindowReportModal");
 const viewWindowStatsButton = document.querySelector("#viewWindowStats");
 const downloadWindowReportButton = document.querySelector("#downloadWindowReport");
+const windowConfirmModal = document.querySelector("#windowConfirmModal");
+const windowConfirmText = document.querySelector("#windowConfirmText");
+const cancelWindowCalculation = document.querySelector("#cancelWindowCalculation");
+const confirmWindowCalculation = document.querySelector("#confirmWindowCalculation");
 const windowStatsButton = document.querySelector("#windowStatsButton");
 const windowStatsModal = document.querySelector("#windowStatsModal");
 const closeWindowStatsModal = document.querySelector("#closeWindowStatsModal");
@@ -95,12 +102,14 @@ let currentSettings = { ...defaultSettings };
 let lastWindowReport = null;
 let windowReportState = null;
 let windowChartState = { slices: [], hoveredIndex: -1 };
+let pendingWindowCalculation = null;
 let currentContextDealId = null;
 let contextDealSnapshot = null;
 let contextDealMonitorTimer = null;
 let contextDealRecalculateBusy = false;
 let contextDealMonitorEventsBound = false;
 let placementInterfaceDiagnostics = null;
+let canManageMapping = false;
 const serverOnlyModes = ["continuous", "twiceDaily"];
 const contextDealMonitorIntervalMs = 5000;
 
@@ -210,12 +219,31 @@ function marketplaceFileUrl(fileName) {
 
 function showWindowReportModal(report) {
   lastWindowReport = report;
-  windowReportText.textContent = `Отчёт за последние ${report.days} суток сформирован. Сделок в отчёте: ${report.dealCount}.`;
+  windowReportText.textContent = `Отчёт за период ${windowPeriodLabel(report.days)} сформирован. Сделок в отчёте: ${report.dealCount}.`;
   windowReportModal.hidden = false;
 }
 
 function hideWindowReportModal() {
   windowReportModal.hidden = true;
+}
+
+function estimateCalculationMinutes(dealCount) {
+  const count = Number(dealCount) || 0;
+  if (count <= 0) return 0;
+  return Math.max(5, Math.ceil(count / 20) * 5);
+}
+
+function showWindowConfirmModal(preflight) {
+  pendingWindowCalculation = preflight;
+  const dealCount = preflight.recent.dealIds.length;
+  const minutes = estimateCalculationMinutes(dealCount);
+  windowConfirmText.textContent = `В расчётный период попало сделок: ${dealCount}. Предварительная оценка времени расчёта: ${minutes} мин. Запускаем расчёт?`;
+  windowConfirmModal.hidden = false;
+}
+
+function hideWindowConfirmModal() {
+  windowConfirmModal.hidden = true;
+  pendingWindowCalculation = null;
 }
 
 function setAutomationProgress(text, percent, { visible = true, tone = "active" } = {}) {
@@ -412,8 +440,8 @@ function restoreWindowSummaryForPeriod(days) {
 function renderWindowStats(report) {
   const summary = buildWindowSummary(report);
   renderDealStatusChart(summary);
-  windowStatsText.textContent = `Период: последние ${report.days} суток.`;
-  invoiceAnalyticsTitle.textContent = `Аналитика счетов за период ${report.days} суток`;
+  windowStatsText.textContent = `Период: ${windowPeriodLabel(report.days)}.`;
+  invoiceAnalyticsTitle.textContent = `Аналитика счетов за период ${windowPeriodLabel(report.days)}`;
   windowStatsNodes.paidAmount.textContent = moneyFormat.format(summary.status.amounts.paid);
   windowStatsNodes.unpaidAmount.textContent = moneyFormat.format(summary.status.amounts.unpaid);
   windowStatsNodes.emptyAmount.textContent = moneyFormat.format(summary.status.amounts.empty);
@@ -537,12 +565,16 @@ function summarize(deal, invoices, settings) {
 }
 
 async function loadSettings() {
+  return (await loadSettingsState()).settings;
+}
+
+async function loadSettingsState() {
   try {
     const stored = await callMethod("app.option.get", { option: "dealInvoiceSummarySettings" });
-    return { ...defaultSettings, ...(stored ? JSON.parse(stored) : {}) };
+    const parsed = parseSettingsObject(stored);
+    return { settings: { ...defaultSettings, ...parsed, ...loadUserCalculationSettings() }, hasStoredSettings: Boolean(stored) && Object.keys(parsed).length > 0 };
   } catch {
-    const local = localStorage.getItem("dealInvoiceSummarySettings");
-    return { ...defaultSettings, ...(local ? JSON.parse(local) : {}) };
+    return { settings: { ...defaultSettings, ...loadUserCalculationSettings() }, hasStoredSettings: false };
   }
 }
 
@@ -586,9 +618,18 @@ async function loadServerSupport() {
 }
 
 function parseJsonOption(value, fallback) {
-  if (!value) return fallback;
-  if (typeof value === "string") return JSON.parse(value);
-  return value;
+  try {
+    if (!value) return fallback;
+    if (typeof value === "string") return JSON.parse(value);
+    return value;
+  } catch {
+    return fallback;
+  }
+}
+
+function parseSettingsObject(value) {
+  const parsed = parseJsonOption(value, {});
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
 }
 
 async function loadCachedDealCategories() {
@@ -622,9 +663,38 @@ function renderServerSupport() {
 }
 
 function normalizeWindowDays(value) {
-  const allowed = [42, 28, 21, 14, 7, 2];
+  const allowed = [30, 90, 180];
   const days = Number(value);
-  return allowed.includes(days) ? days : 21;
+  return allowed.includes(days) ? days : 30;
+}
+
+function windowPeriodLabel(value) {
+  const days = normalizeWindowDays(value);
+  if (days === 180) return "6 мес";
+  if (days === 90) return "3 мес";
+  return "1 мес";
+}
+
+function parseUserCalculationSettings(value) {
+  const parsed = parseSettingsObject(value);
+  const settings = {};
+  if (parsed.calculationCategoryId !== undefined) settings.calculationCategoryId = parsed.calculationCategoryId;
+  if (parsed.autoRecalcWindowDays !== undefined) settings.autoRecalcWindowDays = normalizeWindowDays(parsed.autoRecalcWindowDays);
+  return settings;
+}
+
+function loadUserCalculationSettings() {
+  return parseUserCalculationSettings(localStorage.getItem(userCalculationSettingsOption));
+}
+
+async function saveUserCalculationSettings(settings) {
+  const payload = {
+    calculationCategoryId: settingsCategoryId(settings),
+    autoRecalcWindowDays: normalizeWindowDays(settings.autoRecalcWindowDays),
+  };
+  localStorage.setItem(userCalculationSettingsOption, JSON.stringify(payload));
+  currentSettings = { ...currentSettings, ...payload };
+  await renderCalculationCategory(currentSettings);
 }
 
 async function saveSettings(settings) {
@@ -633,6 +703,14 @@ async function saveSettings(settings) {
     await callMethod("app.option.set", { options: { dealInvoiceSummarySettings: JSON.stringify(settings) } });
   } catch {
     // Local storage keeps the app usable if app.option is unavailable in a dev install.
+  }
+}
+
+async function saveDefaultSetupVersion() {
+  try {
+    await callMethod("app.option.set", { options: { [defaultSetupVersionOption]: runtimeVersion } });
+  } catch {
+    // Version marker is a convenience for upgrades; field setup itself remains the source of truth.
   }
 }
 
@@ -793,12 +871,13 @@ async function dealCategories() {
   try {
     const response = await callMethod("crm.category.list", { entityTypeId: 2 });
     const categories = response?.categories || response?.result?.categories || [];
-    const normalized = categories
+    const normalized = [{ id: 0, name: "Основная" }, ...categories
       .map((category) => ({
         id: Number(category.id ?? category.ID),
         name: category.name || category.NAME || `Воронка #${category.id ?? category.ID}`,
       }))
-      .filter((category) => Number.isFinite(category.id));
+      .filter((category) => Number.isFinite(category.id))]
+      .filter((category, index, list) => list.findIndex((item) => item.id === category.id) === index);
     return normalized.length ? normalized : [{ id: 0, name: "Основная" }];
   } catch (error) {
     return [{ id: 0, name: `Основная (${error.message})` }];
@@ -1044,6 +1123,17 @@ function isSymbolicFieldLabel(label, normalizedId) {
   return upper === normalizedId || /^UF_CRM(_|$)/i.test(text) || /^UFCRM[A-Z0-9_]+$/i.test(text);
 }
 
+function readableFieldType(type) {
+  const normalized = String(type || "").trim().toLowerCase();
+  const labels = {
+    double: "число",
+    integer: "целое число",
+    money: "деньги",
+    string: "строка",
+  };
+  return labels[normalized] || "поле";
+}
+
 function firstHumanLabel(field, normalizedId) {
   const directKeys = [
     "formLabel",
@@ -1085,7 +1175,19 @@ function fieldLabel(field, userFieldLabels) {
   const userLabel = userFieldLabels.get(normalizedId);
   if (userLabel) return userLabel;
 
-  return firstHumanLabel(field, normalizedId) || id;
+  return firstHumanLabel(field, normalizedId);
+}
+
+function uniqueHumanLabel(label, fallback, usedLabels) {
+  const base = String(label || fallback || "Поле сделки").trim();
+  let text = base;
+  let index = 2;
+  while (usedLabels.has(text.toLocaleLowerCase("ru"))) {
+    text = `${base} ${index}`;
+    index += 1;
+  }
+  usedLabels.add(text.toLocaleLowerCase("ru"));
+  return text;
 }
 
 function renderFields(fields, userFields, settings) {
@@ -1096,24 +1198,67 @@ function renderFields(fields, userFields, settings) {
         const label = firstHumanLabel(field, fieldName);
         return [
           fieldName,
-          label || defaultFieldLabels.get(fieldName) || fieldName,
+          label || defaultFieldLabels.get(fieldName) || "",
         ];
       })
       .filter(([fieldName]) => fieldName),
   );
+  const usedLabels = new Set();
   const available = Object.entries(fields)
     .filter(([, field]) => ["double", "integer", "money", "string"].includes(field.type || field.TYPE || field.USER_TYPE_ID))
-    .map(([id, field]) => ({
-      id,
-      type: field.type || field.TYPE || field.USER_TYPE_ID || "",
-      label: fieldLabel({ ...field, FIELD_NAME: id }, userFieldLabels),
-    }))
+    .map(([id, field], index) => {
+      const type = field.type || field.TYPE || field.USER_TYPE_ID || "";
+      const normalizedId = normalizeFieldName(id);
+      const label = fieldLabel({ ...field, FIELD_NAME: id }, userFieldLabels);
+      return {
+        id,
+        type,
+        label: uniqueHumanLabel(label, defaultFieldLabels.get(normalizedId) || `Поле сделки ${index + 1}`, usedLabels),
+      };
+    })
     .sort((a, b) => a.label.localeCompare(b.label, "ru"));
   for (const select of form.querySelectorAll("select")) {
     select.replaceChildren(new Option("Не записывать", ""));
-    for (const field of available) select.add(new Option(`${field.label} (${field.type})`, normalizeFieldName(field.id)));
+    for (const field of available) select.add(new Option(`${field.label} (${readableFieldType(field.type)})`, normalizeFieldName(field.id)));
     select.value = normalizeFieldName(settings[select.name]);
   }
+}
+
+function standardFieldsExist(userFields) {
+  const existing = new Set(userFields.map((field) => normalizeFieldName(field.FIELD_NAME || field.fieldName)));
+  return defaultMappingKeys.every((key) => existing.has(defaultSettings[key]));
+}
+
+async function canManageCrmSettings() {
+  try {
+    return Boolean(await callMethod("user.admin"));
+  } catch {
+    return Boolean(window.BX24?.isAdmin?.());
+  }
+}
+
+function setMappingAccess(allowed) {
+  canManageMapping = allowed;
+  form.querySelectorAll("select, input, button").forEach((node) => {
+    node.disabled = !allowed;
+  });
+  if (openAppSettingsButton) openAppSettingsButton.disabled = false;
+  form.dataset.access = allowed ? "admin" : "locked";
+}
+
+async function ensureDefaultSetupIfNeeded(settingsState, userFields) {
+  if (!canManageMapping) return { settings: settingsState.settings, userFields, fields: null, card: null };
+  const setupVersion = await readAppOption(defaultSetupVersionOption);
+  if (setupVersion === runtimeVersion && settingsState.hasStoredSettings && standardFieldsExist(userFields)) {
+    return { settings: settingsState.settings, userFields, fields: null, card: null };
+  }
+  const card = await ensureFields();
+  const [settings, fields, refreshedUserFields] = await Promise.all([
+    loadSettings(),
+    callMethod("crm.deal.fields"),
+    callList("crm.deal.userfield.list"),
+  ]);
+  return { settings, fields, userFields: refreshedUserFields, card };
 }
 
 async function ensureFields() {
@@ -1158,9 +1303,12 @@ async function ensureFields() {
     paidField: defaultSettings.paidField,
     unpaidField: defaultSettings.unpaidField,
     remainingField: defaultSettings.remainingField,
+    calculationCategoryId: "all",
   };
   await saveSettings(settings);
-  return configureDealCardSection(settings);
+  const card = await configureDealCardSection(settings);
+  await saveDefaultSetupVersion();
+  return card;
 }
 
 async function getInvoices(dealId) {
@@ -1247,6 +1395,19 @@ async function recalculateDealsInWindow() {
     recent.invoiceDealIds = invoiceWindow.dealIds;
     recent.attempts = [...recent.attempts, ...invoiceWindow.attempts];
     automationTracked.textContent = String(recent.dealIds.length);
+    showWindowConfirmModal({ days, settings: currentSettings, recent });
+  } catch (error) {
+    setAutomationProgress("Ошибка подготовки расчёта", 100, { tone: "warning" });
+    write({ appVersion, ok: false, operation: "marketplace-window-preflight", error: error.message });
+  } finally {
+    recentButton.disabled = false;
+  }
+}
+
+async function runWindowCalculation(preflight) {
+  const { days, recent } = preflight;
+  recentButton.disabled = true;
+  try {
     if (!recent.dealIds.length) {
       setAutomationProgress("Сделок для пересчёта не найдено", 100, { tone: "warning" });
       automationLastRun.textContent = formatLastRun(new Date().toISOString());
@@ -1628,22 +1789,35 @@ async function initApp() {
   portalHost = window.BX24?.getDomain?.() || "";
   portal.textContent = portalHost ? `${portalHost} · Bitrix24 Marketplace` : "Bitrix24 Marketplace";
   
-  const settings = await loadSettings();
-  currentSettings = settings;
+  let settingsState = await loadSettingsState();
+  canManageMapping = await canManageCrmSettings();
+  setMappingAccess(canManageMapping);
+  currentSettings = settingsState.settings;
   serverSupport = await loadServerSupport();
   renderServerSupport();
-  await renderCalculationCategory(settings);
+  await renderCalculationCategory(settingsState.settings);
   automationMode.value = "onChange";
   renderAutomationModeDetails();
-  autoRecalcWindowDays.value = String(normalizeWindowDays(settings.autoRecalcWindowDays));
-  const [fields, userFields] = await Promise.all([
+  autoRecalcWindowDays.value = String(normalizeWindowDays(settingsState.settings.autoRecalcWindowDays));
+  let [fields, initialUserFields] = await Promise.all([
     callMethod("crm.deal.fields"),
     callList("crm.deal.userfield.list"),
   ]);
-  renderFields(fields, userFields, settings);
-  form.includeNegativeStages.checked = Boolean(settings.includeNegativeStages);
-  setMappingStatus("Сопоставление готово.", "success");
-  write("Настройки загружены.");
+  const defaultSetup = await ensureDefaultSetupIfNeeded(settingsState, initialUserFields);
+  if (defaultSetup.fields) fields = defaultSetup.fields;
+  settingsState = { settings: defaultSetup.settings, hasStoredSettings: true };
+  currentSettings = defaultSetup.settings;
+  renderFields(fields, defaultSetup.userFields, settingsState.settings);
+  form.includeNegativeStages.checked = Boolean(settingsState.settings.includeNegativeStages);
+  setMappingStatus(
+    canManageMapping
+      ? defaultSetup.card
+        ? "Стандартные поля и сопоставление настроены для всех воронок."
+        : "Сопоставление готово."
+      : "Сопоставление доступно только администратору CRM.",
+    canManageMapping ? "success" : "warning",
+  );
+  write(defaultSetup.card ? { appVersion, operation: "default-setup", dealCard: defaultSetup.card } : "Настройки загружены.");
   restoreWindowSummaryForPeriod(autoRecalcWindowDays.value);
 
   const contextDealId = dealIdFromContext();
@@ -1671,6 +1845,11 @@ async function initApp() {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (!canManageMapping) {
+    setMappingStatus("Сопоставление доступно только администратору CRM.", "warning");
+    write({ appVersion, ok: false, operation: "save-mapping", error: "CRM admin rights required" }, { reveal: true });
+    return;
+  }
   try {
     const existingSettings = await loadSettings();
     const settings = { ...existingSettings, ...Object.fromEntries(new FormData(form)) };
@@ -1719,6 +1898,11 @@ dealForm.addEventListener("submit", async (event) => {
 });
 
 document.querySelector("#ensureFields").addEventListener("click", async () => {
+  if (!canManageMapping) {
+    setMappingStatus("Создание полей доступно только администратору CRM.", "warning");
+    write({ appVersion, ok: false, operation: "ensure-fields", error: "CRM admin rights required" }, { reveal: true });
+    return;
+  }
   try {
     setMappingStatus("Создаю стандартные поля...");
     const card = await ensureFields();
@@ -1740,7 +1924,7 @@ recentButton.addEventListener("click", recalculateDealsInWindow);
 autoRecalcWindowDays.addEventListener("change", () => {
   currentSettings = { ...currentSettings, autoRecalcWindowDays: normalizeWindowDays(autoRecalcWindowDays.value) };
   resetWindowSummary();
-  saveSettings(currentSettings).catch((error) => {
+  saveUserCalculationSettings(currentSettings).catch((error) => {
     write({ appVersion, ok: false, operation: "save-window-days", error: error.message });
   });
 });
@@ -1754,6 +1938,12 @@ serverSupportModal.addEventListener("click", (event) => {
   if (event.target === serverSupportModal) hideServerSupportModal();
 });
 closeWindowReportModal.addEventListener("click", hideWindowReportModal);
+cancelWindowCalculation.addEventListener("click", hideWindowConfirmModal);
+confirmWindowCalculation.addEventListener("click", () => {
+  const preflight = pendingWindowCalculation;
+  hideWindowConfirmModal();
+  if (preflight) runWindowCalculation(preflight);
+});
 viewWindowStatsButton.addEventListener("click", () => {
   showWindowStatsModal();
 });
@@ -1764,6 +1954,9 @@ windowStatsChart.addEventListener("mouseleave", clearChartHover);
 closeWindowStatsModal.addEventListener("click", hideWindowStatsModal);
 windowReportModal.addEventListener("click", (event) => {
   if (event.target === windowReportModal) hideWindowReportModal();
+});
+windowConfirmModal.addEventListener("click", (event) => {
+  if (event.target === windowConfirmModal) hideWindowConfirmModal();
 });
 windowStatsModal.addEventListener("click", (event) => {
   if (event.target === windowStatsModal) hideWindowStatsModal();

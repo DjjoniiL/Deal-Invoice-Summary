@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="style.css?v=layout-20260813-4">
+    <link rel="stylesheet" href="style.css?v=layout-20260814-3">
     <title>Калькулятор счетов</title>
     <script src="//api.bitrix24.com/api/v1/"></script>
   </head>
@@ -75,12 +75,9 @@
             </label>
             <label>Период расчёта
               <select id="autoRecalcWindowDays">
-                <option value="42">42 суток</option>
-                <option value="28">28 суток</option>
-                <option value="21" selected>21 сутки</option>
-                <option value="14">14 суток</option>
-                <option value="7">7 суток</option>
-                <option value="2">2 суток</option>
+                <option value="30" selected>1 мес</option>
+                <option value="90">3 мес</option>
+                <option value="180">6 мес</option>
               </select>
             </label>
             <div class="automation-stat">
@@ -164,6 +161,16 @@
         </div>
       </section>
     </div>
+    <div id="windowConfirmModal" class="modal-backdrop" hidden>
+      <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="windowConfirmTitle">
+        <h2 id="windowConfirmTitle">Запуск расчёта</h2>
+        <p id="windowConfirmText">В расчётный период попало сделок: 0. Предварительная оценка времени расчёта: 0 мин. Запускаем расчёт?</p>
+        <div class="modal-actions confirm-actions">
+          <button id="cancelWindowCalculation" type="button" class="secondary-button">НЕТ</button>
+          <button id="confirmWindowCalculation" type="button">ДА</button>
+        </div>
+      </section>
+    </div>
     <div id="windowStatsModal" class="modal-backdrop" hidden>
       <section class="modal-panel stats-modal" role="dialog" aria-modal="true" aria-labelledby="windowStatsTitle">
         <div class="modal-title-row">
@@ -195,9 +202,9 @@
       </section>
     </div>
     <!-- Принудительное обновление версии -->
-    <script src="app.js?v=layout-20260813-4"></script>
+    <script src="app.js?v=layout-20260814-3"></script>
     <div style="font-size:10px;color:#999;text-align:center;margin-top:8px;">
-      Deal Invoice Summary v.18 Marketplace B24
+      Deal Invoice Summary v.21 Marketplace B24
     </div>
   </body>
 </html>

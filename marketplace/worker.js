@@ -1,5 +1,5 @@
-const runtimeVersion = "layout-20260813-4";
-const appVersion = "Deal Invoice Summary v.18 Marketplace B24";
+const runtimeVersion = "layout-20260814-3";
+const appVersion = "Deal Invoice Summary v.21 Marketplace B24";
 const defaultSettings = {
   includeNegativeStages: false,
   issuedField: "UF_CRM_INV_SUM_ISSUED",
@@ -7,12 +7,13 @@ const defaultSettings = {
   unpaidField: "UF_CRM_INV_SUM_UNPAID",
   remainingField: "UF_CRM_INV_SUM_REMAINING",
   autoRecalcMode: "onOpen",
-  autoRecalcWindowDays: 21,
+  autoRecalcWindowDays: 30,
   calculationCategoryId: "all",
 };
 const workerPollIntervalMs = 5000;
 const workerStatusThrottleMs = 60000;
 const workerLockTtlMs = 12000;
+const listMonitorLimit = 25;
 const backgroundPlacementCode = "PAGE_BACKGROUND_WORKER";
 const workerStatusOption = "dealInvoiceSummaryWorkerStatus";
 const workerSessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -22,6 +23,8 @@ let activeUri = "";
 let lastDealSnapshot = null;
 let monitorTimer = null;
 let monitorBusy = false;
+let listMonitorReady = false;
+let lastListSnapshots = new Map();
 let lastStatusWriteAt = 0;
 let placementInterfaceDiagnostics = null;
 
@@ -34,6 +37,19 @@ function callMethod(method, params = {}) {
       else resolve(result.data());
     });
   });
+}
+
+async function callList(method, params = {}, listKey = null, maxPages = 2) {
+  const rows = [];
+  let start = 0;
+  for (let page = 0; page < maxPages; page += 1) {
+    const response = await callMethod(method, { ...params, start });
+    const data = listKey ? response?.[listKey] : response;
+    rows.push(...(Array.isArray(data) ? data : []));
+    if (!response || response.next === undefined || response.next === null) break;
+    start = response.next;
+  }
+  return rows;
 }
 
 function money(value) {
@@ -161,6 +177,26 @@ function dealChangeSnapshot(deal) {
   };
 }
 
+function dealListSnapshot(deal) {
+  return {
+    amount: money(deal.OPPORTUNITY ?? deal.opportunity),
+    stageId: String(deal.STAGE_ID || deal.stageId || "").trim(),
+    categoryId: dealCategoryId(deal),
+    modifiedAt: String(deal.DATE_MODIFY || deal.dateModify || deal.MODIFY_BY_ID || "").trim(),
+  };
+}
+
+function sameDealListSnapshot(left, right) {
+  return Boolean(
+    left
+      && right
+      && sameMoneyValue(left.amount, right.amount)
+      && left.stageId === right.stageId
+      && left.categoryId === right.categoryId
+      && left.modifiedAt === right.modifiedAt,
+  );
+}
+
 function sameDealChangeSnapshot(left, right) {
   return Boolean(left && right && sameMoneyValue(left.amount, right.amount) && left.stageId === right.stageId);
 }
@@ -186,6 +222,14 @@ async function getInvoices(dealId) {
     select: ["id", "opportunity", "stageId", "parentId2"],
   });
   return response.items || response.result?.items || [];
+}
+
+async function getRecentlyModifiedDeals() {
+  return callList("crm.deal.list", {
+    order: { DATE_MODIFY: "DESC" },
+    filter: {},
+    select: ["ID", "TITLE", "OPPORTUNITY", "STAGE_ID", "CATEGORY_ID", "DATE_MODIFY"],
+  }, null, 1).then((rows) => rows.slice(0, listMonitorLimit));
 }
 
 function normalizePlacementInterfaceList(value) {
@@ -340,6 +384,56 @@ async function checkDeal(reason = "worker-poll") {
   }
 }
 
+function isDealWorkspaceUri(uri) {
+  return /\/crm\/deal(?:\/|$)/i.test(String(uri || ""));
+}
+
+async function checkRecentDealChanges(reason = "worker-list-poll") {
+  if (!isDealWorkspaceUri(activeUri) || monitorBusy) return;
+  monitorBusy = true;
+  try {
+    const deals = await getRecentlyModifiedDeals();
+    const nextSnapshots = new Map();
+    const changedDeals = [];
+
+    for (const deal of deals) {
+      const dealId = Number(deal.ID || deal.id || 0);
+      if (!dealId) continue;
+      const snapshot = dealListSnapshot(deal);
+      nextSnapshots.set(dealId, snapshot);
+      const previous = lastListSnapshots.get(dealId);
+      if (listMonitorReady && previous && !sameDealListSnapshot(previous, snapshot)) {
+        changedDeals.push({ dealId, deal });
+      }
+    }
+
+    lastListSnapshots = nextSnapshots;
+    if (!listMonitorReady) {
+      listMonitorReady = true;
+      await saveWorkerStatus({ ok: true, operation: "background-deal-list-baseline", monitoredDeals: nextSnapshots.size }, { throttle: true });
+      return;
+    }
+
+    if (!changedDeals.length) {
+      await saveWorkerStatus({ ok: true, operation: reason, skipped: true, monitoredDeals: nextSnapshots.size }, { throttle: true });
+      return;
+    }
+
+    const processed = [];
+    for (const item of changedDeals.slice(0, 5)) {
+      if (!claimDealLock(item.dealId)) continue;
+      const result = await recalculateDeal(item.dealId, item.deal, "background-deal-list-change-recalculate");
+      processed.push({ dealId: item.dealId, updatedFields: result.updatedFields, skippedUpdate: result.skippedUpdate, skippedCategory: result.skippedCategory });
+    }
+
+    await saveWorkerStatus({ ok: true, operation: "background-deal-list-change-recalculate", changedDeals: changedDeals.length, processed });
+  } catch (error) {
+    await saveWorkerStatus({ ok: false, operation: reason, error: error.message });
+  } finally {
+    monitorBusy = false;
+  }
+}
+
 function parsePlacementOptionsText(value) {
   try {
     return JSON.parse(value || "{}") || {};
@@ -381,7 +475,13 @@ function startWorker() {
   activeDealId = dealIdFromUri(activeUri);
 
   if (!activeDealId) {
-    saveWorkerStatus({ ok: true, operation: "background-worker-idle", placement: context.placement }, { throttle: true });
+    if (isDealWorkspaceUri(activeUri)) {
+      saveWorkerStatus({ ok: true, operation: "background-deal-list-start", placement: context.placement, uri: activeUri, pollIntervalMs: workerPollIntervalMs }, { throttle: true });
+      window.setTimeout(() => checkRecentDealChanges("worker-list-initial-check"), 1200);
+      monitorTimer = window.setInterval(() => checkRecentDealChanges("worker-list-poll"), workerPollIntervalMs);
+      return;
+    }
+    saveWorkerStatus({ ok: true, operation: "background-worker-idle", placement: context.placement, uri: activeUri }, { throttle: true });
     return;
   }
 

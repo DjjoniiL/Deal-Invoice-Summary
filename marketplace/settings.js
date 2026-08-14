@@ -1,5 +1,5 @@
-const runtimeVersion = "layout-20260813-4";
-const appVersion = "Deal Invoice Summary v.18 Marketplace B24";
+const runtimeVersion = "layout-20260814-3";
+const appVersion = "Deal Invoice Summary v.21 Marketplace B24";
 const defaultSettings = {
   includeNegativeStages: false,
   issuedField: "UF_CRM_INV_SUM_ISSUED",
@@ -7,9 +7,10 @@ const defaultSettings = {
   unpaidField: "UF_CRM_INV_SUM_UNPAID",
   remainingField: "UF_CRM_INV_SUM_REMAINING",
   autoRecalcMode: "onOpen",
-  autoRecalcWindowDays: 21,
+  autoRecalcWindowDays: 30,
   calculationCategoryId: "all",
 };
+const userCalculationSettingsOption = "dealInvoiceSummaryUserCalculationSettings";
 
 const categorySelect = document.querySelector("#calculationCategoryId");
 const windowDaysSelect = document.querySelector("#autoRecalcWindowDaysSetting");
@@ -37,9 +38,13 @@ function marketplaceFileUrl(fileName) {
 }
 
 function parseJsonOption(value, fallback) {
-  if (!value) return fallback;
-  if (typeof value === "string") return JSON.parse(value);
-  return value;
+  try {
+    if (!value) return fallback;
+    if (typeof value === "string") return JSON.parse(value);
+    return value;
+  } catch {
+    return fallback;
+  }
 }
 
 function normalizeCategory(category) {
@@ -64,25 +69,32 @@ async function loadDealCategories({ refresh = false } = {}) {
 
   const response = await callMethod("crm.category.list", { entityTypeId: 2 });
   const categories = (response?.categories || response?.result?.categories || []).map(normalizeCategory).filter(Boolean);
-  const normalized = categories.length ? categories : [{ id: 0, name: "Основная" }];
-  await callMethod("app.option.set", { options: { dealInvoiceSummaryDealCategories: JSON.stringify(normalized) } });
+  const normalized = [{ id: 0, name: "Основная" }, ...categories]
+    .filter((category, index, list) => list.findIndex((item) => item.id === category.id) === index);
+  try {
+    await callMethod("app.option.set", { options: { dealInvoiceSummaryDealCategories: JSON.stringify(normalized) } });
+  } catch {
+    // Employees can still use the fresh list in this browser session without app.option write rights.
+  }
   return normalized;
 }
 
 async function loadSettings() {
+  const userSettings = parseJsonOption(localStorage.getItem(userCalculationSettingsOption), {});
   try {
     const stored = await callMethod("app.option.get", { option: "dealInvoiceSummarySettings" });
-    return { ...defaultSettings, ...parseJsonOption(stored, {}) };
+    return { ...defaultSettings, ...parseJsonOption(stored, {}), ...userSettings };
   } catch {
-    const local = localStorage.getItem("dealInvoiceSummarySettings");
-    return { ...defaultSettings, ...parseJsonOption(local, {}) };
+    return { ...defaultSettings, ...userSettings };
   }
 }
 
 async function saveSettings(settings) {
-  const payload = JSON.stringify(settings);
-  localStorage.setItem("dealInvoiceSummarySettings", payload);
-  await callMethod("app.option.set", { options: { dealInvoiceSummarySettings: payload } });
+  const payload = JSON.stringify({
+    calculationCategoryId: settings.calculationCategoryId,
+    autoRecalcWindowDays: normalizeWindowDays(settings.autoRecalcWindowDays),
+  });
+  localStorage.setItem(userCalculationSettingsOption, payload);
 }
 
 function renderCategories(categories, selected) {
@@ -94,9 +106,9 @@ function renderCategories(categories, selected) {
 }
 
 function normalizeWindowDays(value) {
-  const allowed = [42, 28, 21, 14, 7, 2];
+  const allowed = [30, 90, 180];
   const days = Number(value);
-  return allowed.includes(days) ? days : 21;
+  return allowed.includes(days) ? days : 30;
 }
 
 async function initSettings({ refresh = false } = {}) {
@@ -118,7 +130,7 @@ async function saveAppSettings() {
     settings.calculationCategoryId = categorySelect.value;
     settings.autoRecalcWindowDays = normalizeWindowDays(windowDaysSelect.value);
     await saveSettings(settings);
-    statusNode.textContent = "Настройки сохранены.";
+    statusNode.textContent = "Настройки сохранены для этого пользователя.";
   } catch (error) {
     statusNode.textContent = `Ошибка сохранения: ${error.message}`;
   } finally {

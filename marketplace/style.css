@@ -145,12 +145,29 @@ p {
   min-width: 0;
 }
 
+.setup-panel {
+  padding-bottom: 16px;
+}
+
 .settings-shell {
   max-width: 820px;
 }
 
 .settings-panel {
   gap: 14px;
+}
+
+.settings-panel .form-actions {
+  grid-template-columns: minmax(210px, max-content) minmax(220px, 1fr);
+  min-height: 0;
+}
+
+.settings-panel #settingsStatus {
+  grid-column: 1 / -1;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .panel-tools {
@@ -230,20 +247,21 @@ button:disabled {
 }
 
 .form-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(180px, 1fr) 38px;
   align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-height: 88px;
 }
 
 .settings-link-button {
-  margin-left: auto;
+  justify-self: end;
   font-size: 24px;
   line-height: 1;
 }
 
 .mapping-auto-note {
-  flex-basis: 100%;
+  grid-column: 1 / -1;
   color: #0f7b6c;
   font-size: 13px;
   font-weight: 700;
@@ -262,6 +280,8 @@ button:disabled {
 #mappingStatus {
   color: var(--muted);
   font-size: 13px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 #mappingStatus[data-tone="success"] {

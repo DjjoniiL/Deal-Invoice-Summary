@@ -3,8 +3,27 @@ const installButton = document.querySelector("#installButton");
 const logNode = document.querySelector("#log");
 const INSTALL_STEP_DELAY_MS = 2500;
 
-const RUNTIME_VERSION = "layout-20260813-4";
-const APP_VERSION = "Deal Invoice Summary v.18 Marketplace B24"; // синхронизировать с app.js
+const RUNTIME_VERSION = "layout-20260814-3";
+const APP_VERSION = "Deal Invoice Summary v.21 Marketplace B24"; // синхронизировать с app.js
+const DEFAULT_SETTINGS = {
+  includeNegativeStages: false,
+  issuedField: "UF_CRM_INV_SUM_ISSUED",
+  paidField: "UF_CRM_INV_SUM_PAID",
+  unpaidField: "UF_CRM_INV_SUM_UNPAID",
+  remainingField: "UF_CRM_INV_SUM_REMAINING",
+  autoRecalcMode: "onOpen",
+  autoRecalcWindowDays: 30,
+  calculationCategoryId: "all",
+};
+const DEAL_SUMMARY_SECTION_NAME = "deal_invoice_summary";
+const DEAL_SUMMARY_SECTION_TITLE = "Расчёт оплаты счетов";
+const DEFAULT_SETUP_VERSION_OPTION = "dealInvoiceSummaryDefaultSetupVersion";
+const STANDARD_FIELDS = [
+  ["INV_SUM_ISSUED", "Сумма выставленных счетов"],
+  ["INV_SUM_PAID", "Сумма оплаченных счетов"],
+  ["INV_SUM_UNPAID", "Сумма неоплаченных счетов"],
+  ["INV_SUM_REMAINING", "Остаток оплаты сделки"],
+];
 
 function appUrl(fileName = "index.html") {
   const url = new URL(window.location.href);
@@ -90,6 +109,13 @@ async function bindPlacement(placement, params, { refreshBeforeBind = false } = 
   }
 }
 
+function normalizeFieldName(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (/^UF_CRM_/i.test(text)) return text.toUpperCase();
+  return `UF_CRM_${text.toUpperCase()}`;
+}
+
 function normalizeDealCategory(category) {
   const id = Number(category.id ?? category.ID);
   if (!Number.isFinite(id)) return null;
@@ -102,13 +128,162 @@ function normalizeDealCategory(category) {
 async function loadDealCategories() {
   const response = await callMethod("crm.category.list", { entityTypeId: 2 });
   const categories = (response?.categories || response?.result?.categories || []).map(normalizeDealCategory).filter(Boolean);
-  return categories.length ? categories : [{ id: 0, name: "Основная" }];
+  return [{ id: 0, name: "Основная" }, ...categories]
+    .filter((category, index, list) => list.findIndex((item) => item.id === category.id) === index);
 }
 
 async function cacheDealCategories() {
   const categories = await loadDealCategories();
   await callMethod("app.option.set", { options: { dealInvoiceSummaryDealCategories: JSON.stringify(categories) } });
   return categories;
+}
+
+function defaultDealCardLayout() {
+  return [
+    {
+      name: "main",
+      title: "О сделке",
+      type: "section",
+      elements: [
+        { name: "TITLE", optionFlags: 1 },
+        { name: "OPPORTUNITY_WITH_CURRENCY", optionFlags: 0 },
+        { name: "STAGE_ID", optionFlags: 0 },
+        { name: "CLOSEDATE", optionFlags: 0 },
+        { name: "CLIENT", optionFlags: 0 },
+      ],
+    },
+    {
+      name: "additional",
+      title: "Дополнительно",
+      type: "section",
+      elements: [
+        { name: "TYPE_ID", optionFlags: 0 },
+        { name: "SOURCE_ID", optionFlags: 0 },
+        { name: "OPENED", optionFlags: 0 },
+        { name: "ASSIGNED_BY_ID", optionFlags: 0 },
+        { name: "COMMENTS", optionFlags: 0 },
+      ],
+    },
+    {
+      name: "products",
+      title: "Товары",
+      type: "section",
+      elements: [{ name: "PRODUCT_ROW_SUMMARY", optionFlags: 0 }],
+    },
+  ];
+}
+
+function mergeDealSummarySection(layout, fieldNames) {
+  const sections = Array.isArray(layout) && layout.length ? layout : defaultDealCardLayout();
+  const targetNames = new Set(fieldNames);
+  const cleanedSections = sections
+    .filter((section) => section?.name !== DEAL_SUMMARY_SECTION_NAME)
+    .map((section) => ({
+      ...section,
+      elements: (section.elements || []).filter((element) => !targetNames.has(String(element.name || "").toUpperCase())),
+    }));
+
+  cleanedSections.push({
+    name: DEAL_SUMMARY_SECTION_NAME,
+    title: DEAL_SUMMARY_SECTION_TITLE,
+    type: "section",
+    elements: fieldNames.map((name) => ({ name, optionFlags: 1 })),
+  });
+  return cleanedSections;
+}
+
+function isEmptyCardLayoutError(error) {
+  return /card layout is empty/i.test(error?.message || "");
+}
+
+async function configureDealCardSection(categories) {
+  const fieldNames = [
+    DEFAULT_SETTINGS.issuedField,
+    DEFAULT_SETTINGS.paidField,
+    DEFAULT_SETTINGS.unpaidField,
+    DEFAULT_SETTINGS.remainingField,
+  ].map(normalizeFieldName);
+  const methods = [
+    { get: "crm.item.details.configuration.get", set: "crm.item.details.configuration.set", baseParams: { entityTypeId: 2 } },
+    { get: "crm.deal.details.configuration.get", set: "crm.deal.details.configuration.set", baseParams: {} },
+  ];
+  const attempts = [];
+
+  for (const category of categories) {
+    for (const method of methods) {
+      const extras = { dealCategoryId: category.id };
+      let current = null;
+      let createdFromDefaultLayout = false;
+      try {
+        const response = await callMethod(method.get, { ...method.baseParams, scope: "C", extras });
+        current = response?.data || response;
+      } catch (error) {
+        if (isEmptyCardLayoutError(error)) {
+          createdFromDefaultLayout = true;
+        } else {
+          attempts.push({ method: method.get, scope: "C", categoryId: category.id, categoryName: category.name, ok: false, error: error.message });
+          continue;
+        }
+      }
+
+      try {
+        await callMethod(method.set, { ...method.baseParams, scope: "C", extras, data: mergeDealSummarySection(current, fieldNames) });
+        attempts.push({ method: method.set, scope: "C", categoryId: category.id, categoryName: category.name, ok: true, createdFromDefaultLayout });
+        break;
+      } catch (error) {
+        attempts.push({ method: method.set, scope: "C", categoryId: category.id, categoryName: category.name, ok: false, createdFromDefaultLayout, error: error.message });
+      }
+    }
+  }
+
+  const updatedCategories = attempts.filter((attempt) => attempt.ok);
+  return {
+    ok: updatedCategories.length === categories.length,
+    partial: updatedCategories.length !== categories.length,
+    updatedCategories,
+    attempts,
+    note: "Default field mapping is applied to every accessible deal funnel.",
+  };
+}
+
+async function ensureDefaultFieldsAndMapping(categories) {
+  const existing = await callMethod("crm.deal.userfield.list");
+  const rows = Array.isArray(existing) ? existing : existing?.result || [];
+  const byName = new Map(rows.map((field) => [String(field.FIELD_NAME || "").toUpperCase(), field]));
+  for (const [name, label] of STANDARD_FIELDS) {
+    const fieldName = `UF_CRM_${name}`;
+    const createFields = {
+      FIELD_NAME: name,
+      USER_TYPE_ID: "double",
+      EDIT_FORM_LABEL: label,
+      LIST_COLUMN_LABEL: label,
+      LIST_FILTER_LABEL: label,
+      ERROR_MESSAGE: "",
+      HELP_MESSAGE: "",
+      EDIT_IN_LIST: "N",
+      SHOW_IN_CARD: "Y",
+    };
+    const updateFields = {
+      EDIT_FORM_LABEL: label,
+      LIST_COLUMN_LABEL: label,
+      LIST_FILTER_LABEL: label,
+      ERROR_MESSAGE: "",
+      HELP_MESSAGE: "",
+      EDIT_IN_LIST: "N",
+      SHOW_IN_CARD: "Y",
+    };
+    const existingField = byName.get(fieldName);
+    if (existingField?.ID) await callMethod("crm.deal.userfield.update", { id: existingField.ID, fields: updateFields });
+    else await callMethod("crm.deal.userfield.add", { fields: createFields });
+  }
+  const card = await configureDealCardSection(categories);
+  await callMethod("app.option.set", {
+    options: {
+      dealInvoiceSummarySettings: JSON.stringify(DEFAULT_SETTINGS),
+      [DEFAULT_SETUP_VERSION_OPTION]: RUNTIME_VERSION,
+    },
+  });
+  return card;
 }
 
 async function finishInstall() {
@@ -127,20 +302,18 @@ async function finishInstall() {
     message: "URL обработчиков сформированы",
   });
 
-  // Шаг 1: регистрация левого меню
-  statusNode.textContent = "Регистрирую пункт левого меню...";
+  // Шаг 1: очистка старых привязок левого меню.
+  // Сам пункт левого меню для Marketplace задаётся в настройках версии приложения,
+  // иначе Bitrix24 может показать два пункта меню.
+  statusNode.textContent = "Очищаю старые привязки левого меню...";
   let leftMenu = null;
   try {
-    leftMenu = await bindPlacement("LEFT_MENU", {
-      HANDLER: handler,
-      TITLE: "Расчёт оплаты счетов",
-    }, {
-      refreshBeforeBind: true,
-    });
-    writeLog({ step: "left-menu", ...leftMenu, message: leftMenu.rebound ? "Пункт левого меню обновлён и зарегистрирован" : "Пункт левого меню зарегистрирован" });
+    const unbind = await unbindPlacementAll("LEFT_MENU", 10);
+    leftMenu = { ok: true, unbind, skippedBind: true };
+    writeLog({ step: "left-menu-cleanup", ...leftMenu, message: "Старые LEFT_MENU-привязки очищены; основной пункт создаётся настройкой версии Marketplace" });
   } catch (error) {
     leftMenu = { ok: false, error: error.message };
-    writeLog({ step: "left-menu", ok: false, error: error.message, message: "Ошибка регистрации левого меню" });
+    writeLog({ step: "left-menu-cleanup", ok: false, error: error.message, message: "Не удалось очистить старые LEFT_MENU-привязки" });
     await wait(INSTALL_STEP_DELAY_MS);
     // Не прерываем установку – продолжим
   }
@@ -189,12 +362,24 @@ async function finishInstall() {
   statusNode.textContent = "Завершаю установку...";
   statusNode.textContent = "Загружаю список воронок сделок...";
   let dealCategories = null;
+  let defaultSetup = null;
   try {
     dealCategories = await cacheDealCategories();
     writeLog({ step: "deal-categories", ok: true, count: dealCategories.length, categories: dealCategories, message: "Список воронок сохранён для настроек приложения" });
   } catch (error) {
     dealCategories = { ok: false, error: error.message };
     writeLog({ step: "deal-categories", ok: false, error: error.message, message: "Не удалось сохранить список воронок при установке" });
+  }
+
+  statusNode.textContent = "Создаю стандартные поля и сопоставление...";
+  try {
+    const categories = Array.isArray(dealCategories) && dealCategories.length ? dealCategories : [{ id: 0, name: "Основная" }];
+    defaultSetup = await ensureDefaultFieldsAndMapping(categories);
+    writeLog({ step: "default-fields-and-mapping", ok: defaultSetup.ok, defaultSetup, message: "Стандартные поля и сопоставление сохранены для всех пользователей и всех доступных воронок" });
+  } catch (error) {
+    defaultSetup = { ok: false, error: error.message };
+    writeLog({ step: "default-fields-and-mapping", ok: false, error: error.message, message: "Не удалось автоматически создать поля и сопоставление" });
+    await wait(INSTALL_STEP_DELAY_MS);
   }
 
   writeLog({ step: "finish", message: "Вызываю BX24.installFinish()" });
@@ -216,7 +401,8 @@ async function finishInstall() {
     leftMenu,
     backgroundWorker,
     dealCategories,
-    note: "Deal-card placement настраивается через сохранение сопоставления в приложении, а не через install.",
+    defaultSetup,
+    note: "Deal-card placement настраивается через сохранение сопоставления в приложении и установщик с дефолтным сопоставлением.",
   });
 }
 
