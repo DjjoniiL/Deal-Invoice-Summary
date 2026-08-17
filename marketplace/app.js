@@ -1,5 +1,6 @@
 const defaultSettings = {
   includeNegativeStages: false,
+  includeInvoiceWindowDeals: true,
   issuedField: "UF_CRM_INV_SUM_ISSUED",
   paidField: "UF_CRM_INV_SUM_PAID",
   unpaidField: "UF_CRM_INV_SUM_UNPAID",
@@ -8,8 +9,8 @@ const defaultSettings = {
   autoRecalcWindowDays: 30,
   calculationCategoryId: "all",
 };
-const runtimeVersion = "layout-20260814-7";
-const appVersion = "Deal Invoice Summary v.25 Marketplace B24";
+const runtimeVersion = "layout-20260817-7";
+const appVersion = "Deal Invoice Summary v.32 Marketplace B24";
 const dealSummarySectionName = "deal_invoice_summary";
 const dealSummarySectionTitle = "Расчёт оплаты счетов";
 const defaultFieldLabels = new Map([
@@ -96,6 +97,8 @@ const totalNodes = {
 let currentReport = null;
 let portalHost = "";
 let stageMap = new Map();
+let dealStageMap = new Map();
+let dealCategoryMap = new Map([[0, "Основная"]]);
 let userMap = new Map();
 let stageDiagnostics = null;
 let serverSupport = { connected: false };
@@ -188,7 +191,7 @@ function hideServerSupportModal() {
 
 function requestServerSupportAction() {
   hideServerSupportModal();
-  openOpenLine();
+  openSupportSettingsChat();
   write({
     appVersion,
     ok: true,
@@ -197,18 +200,7 @@ function requestServerSupportAction() {
   }, { reveal: true });
 }
 
-function openOpenLine() {
-  const selectors = [
-    ".b24-widget-button-openline_livechat",
-    ".b24-widget-button-social-item",
-    ".b24-widget-button-inner-container",
-    ".b24-widget-button-wrapper",
-  ];
-  const target = selectors.map((selector) => document.querySelector(selector)).find(Boolean);
-  if (target) {
-    target.click();
-    return;
-  }
+function openSupportSettingsChat() {
   window.location.href = marketplaceFileUrl(settingsPageFileName, { openChat: "1" });
 }
 
@@ -222,6 +214,17 @@ function marketplaceFileUrl(fileName, extraParams = {}) {
   }
   url.hash = "";
   return url.toString();
+}
+
+function reloadAppFrame() {
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.set("v", runtimeVersion);
+    url.searchParams.set("_refresh", String(Date.now()));
+    window.location.replace(url.toString());
+  } catch {
+    initApp().catch((error) => write({ appVersion, ok: false, operation: "refresh", error: error.message }, { reveal: true }));
+  }
 }
 
 function showWindowReportModal(report) {
@@ -245,7 +248,7 @@ function formatProcessingTime(totalSeconds) {
 function estimateCalculationSeconds(dealCount) {
   const count = Number(dealCount) || 0;
   if (count <= 0) return 0;
-  const secondsPerDeal = 15;
+  const secondsPerDeal = 10;
   return Math.max(30, Math.ceil((count * secondsPerDeal) / 30) * 30);
 }
 
@@ -323,10 +326,12 @@ function buildWindowSummary(report) {
     if (!invoiceCount) group = "empty";
     acc.counts[group] += 1;
     acc.amounts[group] += windowStatusAmount(item, group);
+    if (Number(item.dealId)) acc.dealIds[group].push(Number(item.dealId));
     return acc;
   }, {
     counts: { paid: 0, unpaid: 0, empty: 0, error: 0 },
     amounts: { paid: 0, unpaid: 0, empty: 0 },
+    dealIds: { paid: [], unpaid: [], empty: [] },
   });
 
   const dealCount = Number(report?.dealCount ?? includedResults.length) || includedResults.length;
@@ -405,9 +410,9 @@ function drawDealStatusChart(hoveredIndex = -1) {
 
 function renderDealStatusChart(summary) {
   const statuses = [
-    { key: "paid", label: "Завершено сделок", value: summary.status.counts.paid, color: "#23b47e" },
-    { key: "unpaid", label: "Сделок ожидают доплаты", value: summary.status.counts.unpaid, color: "#2b7de9" },
-    { key: "empty", label: "Сделок без счетов", value: summary.status.counts.empty, color: "#d0d5dd" },
+    { key: "paid", label: "Завершено сделок", value: summary.status.counts.paid, color: "#23b47e", dealIds: summary.status.dealIds.paid, semanticId: "S" },
+    { key: "unpaid", label: "Сделок ожидают доплаты", value: summary.status.counts.unpaid, color: "#2b7de9", dealIds: summary.status.dealIds.unpaid, semanticId: "P" },
+    { key: "empty", label: "Сделок без счетов", value: summary.status.counts.empty, color: "#d0d5dd", dealIds: summary.status.dealIds.empty },
   ];
   const total = statuses.reduce((sum, item) => sum + item.value, 0);
   const radius = 252;
@@ -432,24 +437,58 @@ function renderDealStatusChart(summary) {
   drawDealStatusChart(-1);
 }
 
+function dealListPathForStatsSlice(slice) {
+  const params = new URLSearchParams();
+  params.set("apply_filter", "Y");
+  params.set("clear_filter", "Y");
+  params.set("FILTER[ID]", [...new Set(slice.dealIds || [])].join(","));
+  if (slice.semanticId) params.set("FILTER[STAGE_SEMANTIC_ID]", slice.semanticId);
+  const categoryId = settingsCategoryId(lastWindowReport?.settings || currentSettings);
+  const basePath = categoryId === "all" ? "/crm/deal/list/" : `/crm/deal/category/${categoryId}/`;
+  return `${basePath}?${params.toString()}`;
+}
+
+function openDealListForStatsSlice(slice) {
+  if (!slice?.dealIds?.length) return;
+  const path = dealListPathForStatsSlice(slice);
+  if (window.BX24?.openPath) {
+    BX24.openPath(path);
+    return;
+  }
+  const href = portalHost ? `https://${portalHost}${path}` : path;
+  window.open(href, "_blank", "noopener");
+}
+
 function updateChartHover(event) {
   if (!windowChartState.slices.length) return;
   const hoveredIndex = hitTestChartSlice(chartPointerPosition(event));
   if (hoveredIndex === windowChartState.hoveredIndex) return;
   windowChartState.hoveredIndex = hoveredIndex;
   drawDealStatusChart(hoveredIndex);
+  const slice = windowChartState.slices[hoveredIndex];
+  windowStatsChart.style.cursor = slice?.dealIds?.length ? "pointer" : "default";
+  windowStatsChart.title = slice?.dealIds?.length ? `${slice.label}: ${slice.value}. Открыть список сделок` : "";
 }
 
 function clearChartHover() {
+  windowStatsChart.style.cursor = "default";
+  windowStatsChart.title = "";
   if (windowChartState.hoveredIndex === -1) return;
   windowChartState.hoveredIndex = -1;
   drawDealStatusChart(-1);
+}
+
+function openHoveredChartSlice(event) {
+  if (!windowChartState.slices.length) return;
+  const slice = windowChartState.slices[hitTestChartSlice(chartPointerPosition(event))];
+  openDealListForStatsSlice(slice);
 }
 
 function renderWindowSummary(report) {
   windowReportState = {
     days: normalizeWindowDays(report.days),
     categoryId: settingsCategoryId(report.settings),
+    includeInvoiceWindowDeals: Boolean(report.settings?.includeInvoiceWindowDeals ?? defaultSettings.includeInvoiceWindowDeals),
     report,
   };
   lastWindowReport = report;
@@ -472,7 +511,13 @@ function resetWindowSummary() {
 
 function restoreWindowSummaryForPeriod(days) {
   const selectedCategoryId = settingsCategoryId(currentSettings);
-  if (!windowReportState || windowReportState.days !== normalizeWindowDays(days) || windowReportState.categoryId !== selectedCategoryId) {
+  const includeInvoiceWindowDeals = Boolean(currentSettings.includeInvoiceWindowDeals ?? defaultSettings.includeInvoiceWindowDeals);
+  if (
+    !windowReportState
+    || windowReportState.days !== normalizeWindowDays(days)
+    || windowReportState.categoryId !== selectedCategoryId
+    || windowReportState.includeInvoiceWindowDeals !== includeInvoiceWindowDeals
+  ) {
     resetWindowSummary();
     return;
   }
@@ -572,6 +617,39 @@ function dealSemanticFromResult(item) {
   return dealStageSemantic(item.deal?.STAGE_ID || item.deal?.stageId || "");
 }
 
+function dealStageId(deal) {
+  return String(deal?.STAGE_ID || deal?.stageId || deal?.stage_id || "").trim();
+}
+
+function dealStageEntityId(deal) {
+  const categoryId = dealCategoryId(deal);
+  return categoryId > 0 ? `DEAL_STAGE_${categoryId}` : "DEAL_STAGE";
+}
+
+async function loadDealStagesForDeals(deals = []) {
+  const entityIds = [...new Set(deals.filter(Boolean).map(dealStageEntityId))];
+  const rows = [];
+  for (const entityId of entityIds) {
+    try {
+      rows.push(...await callList("crm.status.list", { order: { SORT: "ASC" }, filter: { ENTITY_ID: entityId } }));
+    } catch {
+      // Stage IDs remain available as a fallback in the CSV report.
+    }
+  }
+  dealStageMap = new Map(
+    rows
+      .flatMap((stage) => [stage?.STATUS_ID, stage?.statusId, stage?.ID, stage?.id].filter(Boolean).map((code) => [String(code).trim(), stageTitle(stage)]))
+      .filter(([code, title]) => code && title),
+  );
+}
+
+function dealStageName(deal) {
+  const direct = String(deal?.STAGE_NAME || deal?.stageName || deal?.stage_name || "").trim();
+  if (direct) return direct;
+  const id = dealStageId(deal);
+  return dealStageMap.get(id) || id || "";
+}
+
 function windowStatusAmount(item, group) {
   const dealAmount = money(item.summary?.dealAmount);
   if (dealAmount) return dealAmount;
@@ -593,6 +671,11 @@ function settingsCategoryId(settings) {
   if (value === undefined || value === null || value === "" || value === "all") return "all";
   const number = Number(value);
   return Number.isFinite(number) ? number : "all";
+}
+
+function dealCategoryName(deal) {
+  const id = dealCategoryId(deal);
+  return dealCategoryMap.get(id) || `Воронка #${id}`;
 }
 
 function dealMatchesCalculationCategory(deal, settings) {
@@ -701,7 +784,17 @@ async function loadCachedDealCategories() {
   try {
     const stored = await callMethod("app.option.get", { option: "dealInvoiceSummaryDealCategories" });
     const categories = parseJsonOption(stored, []);
-    return Array.isArray(categories) ? categories : [];
+    const normalized = Array.isArray(categories) ? categories : [];
+    dealCategoryMap = new Map([
+      [0, "Основная"],
+      ...normalized
+        .map((category) => [
+          Number(category.id ?? category.ID),
+          category.name || category.NAME || `Воронка #${category.id ?? category.ID}`,
+        ])
+        .filter(([id, name]) => Number.isFinite(id) && name),
+    ]);
+    return normalized;
   } catch {
     return [];
   }
@@ -745,6 +838,7 @@ function parseUserCalculationSettings(value) {
   const settings = {};
   if (parsed.calculationCategoryId !== undefined) settings.calculationCategoryId = parsed.calculationCategoryId;
   if (parsed.autoRecalcWindowDays !== undefined) settings.autoRecalcWindowDays = normalizeWindowDays(parsed.autoRecalcWindowDays);
+  if (parsed.includeInvoiceWindowDeals !== undefined) settings.includeInvoiceWindowDeals = Boolean(parsed.includeInvoiceWindowDeals);
   return settings;
 }
 
@@ -756,6 +850,7 @@ async function saveUserCalculationSettings(settings) {
   const payload = {
     calculationCategoryId: settingsCategoryId(settings),
     autoRecalcWindowDays: normalizeWindowDays(settings.autoRecalcWindowDays),
+    includeInvoiceWindowDeals: Boolean(settings.includeInvoiceWindowDeals ?? defaultSettings.includeInvoiceWindowDeals),
   };
   localStorage.setItem(userCalculationSettingsOption, JSON.stringify(payload));
   currentSettings = { ...currentSettings, ...payload };
@@ -943,6 +1038,7 @@ async function dealCategories() {
       }))
       .filter((category) => Number.isFinite(category.id))]
       .filter((category, index, list) => list.findIndex((item) => item.id === category.id) === index);
+    dealCategoryMap = new Map(normalized.map((category) => [category.id, category.name]));
     return normalized.length ? normalized : [{ id: 0, name: "Основная" }];
   } catch (error) {
     return [{ id: 0, name: `Основная (${error.message})` }];
@@ -1416,6 +1512,49 @@ async function getRecentInvoiceDealIds(days) {
   return { since, invoiceCount: invoices.length, dealIds, attempts };
 }
 
+async function filterDealIdsByCategory(dealIds, settings) {
+  const ids = [...new Set(dealIds.map(Number).filter((dealId) => Number.isFinite(dealId) && dealId > 0))];
+  const selectedCategory = settingsCategoryId(settings);
+  if (!ids.length || selectedCategory === "all") return { dealIds: ids, attempts: [] };
+
+  const attempts = [];
+  try {
+    const rows = await callList("crm.deal.list", {
+      filter: { ID: ids, CATEGORY_ID: selectedCategory },
+      select: ["ID", "CATEGORY_ID"],
+    });
+    const filteredIds = rows
+      .map((deal) => Number(deal.ID || deal.id))
+      .filter((dealId) => Number.isFinite(dealId) && dealId > 0);
+    attempts.push({ method: "crm.deal.list", filter: "invoiceDealIds by CATEGORY_ID", ok: true, count: filteredIds.length });
+    return { dealIds: [...new Set(filteredIds)], attempts };
+  } catch (error) {
+    attempts.push({ method: "crm.deal.list", filter: "invoiceDealIds by CATEGORY_ID", ok: false, error: error.message });
+  }
+
+  const filteredIds = [];
+  for (const dealId of ids) {
+    try {
+      const deal = await callMethod("crm.deal.get", { id: dealId });
+      if (dealMatchesCalculationCategory(deal, settings)) filteredIds.push(dealId);
+    } catch (error) {
+      attempts.push({ method: "crm.deal.get", dealId, ok: false, error: error.message });
+    }
+  }
+  attempts.push({ method: "crm.deal.get", filter: "invoiceDealIds fallback by CATEGORY_ID", ok: true, count: filteredIds.length });
+  return { dealIds: filteredIds, attempts };
+}
+
+function emptyRecentInvoiceWindow(days) {
+  const since = new Date(Date.now() - normalizeWindowDays(days) * 24 * 60 * 60 * 1000).toISOString();
+  return {
+    since,
+    invoiceCount: 0,
+    dealIds: [],
+    attempts: [{ method: "crm.item.list", skipped: true, reason: "includeInvoiceWindowDeals disabled" }],
+  };
+}
+
 async function getRecentDeals(days, settings) {
   const since = new Date(Date.now() - normalizeWindowDays(days) * 24 * 60 * 60 * 1000).toISOString();
   const attempts = [];
@@ -1454,11 +1593,13 @@ async function recalculateDealsInWindow() {
   try {
     const [recent, invoiceWindow] = await Promise.all([
       getRecentDeals(days, currentSettings),
-      getRecentInvoiceDealIds(days),
+      currentSettings.includeInvoiceWindowDeals ? getRecentInvoiceDealIds(days) : emptyRecentInvoiceWindow(days),
     ]);
+    const filteredInvoiceWindow = await filterDealIdsByCategory(invoiceWindow.dealIds, currentSettings);
     recent.invoiceCount = invoiceWindow.invoiceCount;
-    recent.invoiceDealIds = invoiceWindow.dealIds;
-    recent.attempts = [...recent.attempts, ...invoiceWindow.attempts];
+    recent.invoiceDealIds = filteredInvoiceWindow.dealIds;
+    recent.attempts = [...recent.attempts, ...invoiceWindow.attempts, ...filteredInvoiceWindow.attempts];
+    recent.dealIds = [...new Set([...recent.dealIds, ...filteredInvoiceWindow.dealIds])];
     automationTracked.textContent = String(recent.dealIds.length);
     showWindowConfirmModal({ days, settings: currentSettings, recent });
   } catch (error) {
@@ -1507,6 +1648,10 @@ async function runWindowCalculation(preflight) {
       }
     }
 
+    await Promise.all([
+      loadDealStagesForDeals(results.map((result) => result.deal).filter(Boolean)),
+      loadCachedDealCategories(),
+    ]);
     const ok = results.every((result) => result.ok);
     const elapsedSeconds = finishAutomationElapsed();
     const elapsedText = formatProcessingTime(elapsedSeconds);
@@ -1838,10 +1983,12 @@ function downloadWindowReport(report) {
     ["С", formatDateOnly(source.since)],
     ["Сделок", source.dealCount],
     [],
-    ["ID сделки", "Название", "Выставлено", "Оплачено", "Не оплачено", "Остаток", "Счетов", "В расчёте"],
-    ...source.results.map((item) => [
+    ["ID сделки", "Название", "Тип воронки", "Стадия сделки", "Выставлено", "Оплачено", "Не оплачено", "Остаток", "Счетов", "В расчёте"],
+    ...source.results.filter((item) => !item.skippedCategory).map((item) => [
       item.dealId,
       item.title || "",
+      item.ok ? dealCategoryName(item.deal) : "",
+      item.ok ? dealStageName(item.deal) : "",
       item.summary?.issued ?? "",
       item.summary?.paid ?? "",
       item.summary?.unpaid ?? "",
@@ -1990,7 +2137,7 @@ document.querySelector("#ensureFields").addEventListener("click", async () => {
   }
 });
 
-document.querySelector("#refresh").addEventListener("click", initApp);
+document.querySelector("#refresh").addEventListener("click", reloadAppFrame);
 document.querySelector("#downloadReport").addEventListener("click", downloadReport);
 openAppSettingsButton.addEventListener("click", () => {
   window.location.href = marketplaceFileUrl(settingsPageFileName);
@@ -2026,6 +2173,7 @@ downloadWindowReportButton.addEventListener("click", () => downloadWindowReport(
 windowStatsButton.addEventListener("click", showWindowStatsModal);
 windowStatsChart.addEventListener("mousemove", updateChartHover);
 windowStatsChart.addEventListener("mouseleave", clearChartHover);
+windowStatsChart.addEventListener("click", openHoveredChartSlice);
 closeWindowStatsModal.addEventListener("click", hideWindowStatsModal);
 windowReportModal.addEventListener("click", (event) => {
   if (event.target === windowReportModal) hideWindowReportModal();
@@ -2036,11 +2184,11 @@ windowConfirmModal.addEventListener("click", (event) => {
 windowStatsModal.addEventListener("click", (event) => {
   if (event.target === windowStatsModal) hideWindowStatsModal();
 });
-noticeAction.addEventListener("click", openOpenLine);
+noticeAction.addEventListener("click", openSupportSettingsChat);
 noticeAction.addEventListener("keydown", (event) => {
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
-    openOpenLine();
+    openSupportSettingsChat();
   }
 });
 logToggle.addEventListener("click", () => setLogVisible(resultNode.hidden));

@@ -1,7 +1,8 @@
-const runtimeVersion = "layout-20260814-7";
-const appVersion = "Deal Invoice Summary v.25 Marketplace B24";
+const runtimeVersion = "layout-20260817-7";
+const appVersion = "Deal Invoice Summary v.32 Marketplace B24";
 const defaultSettings = {
   includeNegativeStages: false,
+  includeInvoiceWindowDeals: true,
   issuedField: "UF_CRM_INV_SUM_ISSUED",
   paidField: "UF_CRM_INV_SUM_PAID",
   unpaidField: "UF_CRM_INV_SUM_UNPAID",
@@ -14,6 +15,7 @@ const userCalculationSettingsOption = "dealInvoiceSummaryUserCalculationSettings
 
 const categorySelect = document.querySelector("#calculationCategoryId");
 const windowDaysSelect = document.querySelector("#autoRecalcWindowDaysSetting");
+const includeInvoiceWindowDealsInput = document.querySelector("#includeInvoiceWindowDeals");
 const statusNode = document.querySelector("#settingsStatus");
 const portalNode = document.querySelector("#settingsPortal");
 const backButton = document.querySelector("#backToApp");
@@ -96,6 +98,7 @@ async function saveSettings(settings) {
   const payload = JSON.stringify({
     calculationCategoryId: settings.calculationCategoryId,
     autoRecalcWindowDays: normalizeWindowDays(settings.autoRecalcWindowDays),
+    includeInvoiceWindowDeals: Boolean(settings.includeInvoiceWindowDeals ?? defaultSettings.includeInvoiceWindowDeals),
   });
   localStorage.setItem(userCalculationSettingsOption, payload);
 }
@@ -122,19 +125,52 @@ function hidePeriodHelp() {
   periodHelpModal.hidden = true;
 }
 
+function clickOpenLineTarget(target) {
+  if (!target) return false;
+  target.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, cancelable: true, view: window }));
+  target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
+  target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
+  target.click();
+  return true;
+}
+
+function tryOpenLineApi() {
+  const calls = [
+    () => window.B24Chat?.open?.(),
+    () => window.B24Chat?.instance?.open?.(),
+    () => window.BX?.SiteButton?.open?.(),
+    () => window.BX?.SiteButton?.Manager?.open?.(),
+    () => window.Bitrix24WidgetObject?.open?.(),
+  ];
+  for (const call of calls) {
+    try {
+      if (call()) return true;
+    } catch {
+      // Keep trying the next known widget API.
+    }
+  }
+  return false;
+}
+
 function openOpenLineFromSettings(attempt = 0) {
+  if (tryOpenLineApi()) return;
   const selectors = [
     ".b24-widget-button-openline_livechat",
+    ".b24-widget-button-openline",
     ".b24-widget-button-social-item",
+    ".b24-widget-button-social",
     ".b24-widget-button-inner-container",
     ".b24-widget-button-wrapper",
+    ".b24-widget-button-position-bottom-right",
+    ".b24-widget-button-popup",
   ];
-  const target = selectors.map((selector) => document.querySelector(selector)).find(Boolean);
-  if (target) {
-    target.click();
+  const target = selectors.flatMap((selector) => [...document.querySelectorAll(selector)])
+    .find((node) => node.offsetParent !== null || node.getClientRects().length);
+  if (clickOpenLineTarget(target)) {
+    if (attempt < 6) window.setTimeout(() => tryOpenLineApi(), 650);
     return;
   }
-  if (attempt < 24) window.setTimeout(() => openOpenLineFromSettings(attempt + 1), 500);
+  if (attempt < 60) window.setTimeout(() => openOpenLineFromSettings(attempt + 1), 500);
 }
 
 function shouldOpenChat() {
@@ -149,6 +185,7 @@ async function initSettings({ refresh = false } = {}) {
   ]);
   renderCategories(categories, settings.calculationCategoryId);
   windowDaysSelect.value = String(normalizeWindowDays(settings.autoRecalcWindowDays));
+  includeInvoiceWindowDealsInput.checked = Boolean(settings.includeInvoiceWindowDeals ?? defaultSettings.includeInvoiceWindowDeals);
   statusNode.textContent = "Настройки загружены.";
 }
 
@@ -159,6 +196,7 @@ async function saveAppSettings() {
     const settings = await loadSettings();
     settings.calculationCategoryId = categorySelect.value;
     settings.autoRecalcWindowDays = normalizeWindowDays(windowDaysSelect.value);
+    settings.includeInvoiceWindowDeals = includeInvoiceWindowDealsInput.checked;
     await saveSettings(settings);
     statusNode.textContent = "Настройки сохранены для этого пользователя.";
   } catch (error) {

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="style.css?v=layout-20260814-7">
+    <link rel="stylesheet" href="style.css?v=layout-20260817-7">
     <title>Настройки приложения</title>
     <script src="//api.bitrix24.com/api/v1/"></script>
   </head>
@@ -39,6 +39,11 @@
           </span>
         </label>
 
+        <label class="check setting-check">
+          <input id="includeInvoiceWindowDeals" type="checkbox" checked>
+          Учитывать сделки прошлых периодов, если счета созданы в выбранном периоде
+        </label>
+
         <div class="form-actions">
           <button id="saveAppSettings" type="button">Сохранить настройки</button>
           <button id="refreshDealCategories" class="secondary-button" type="button">Обновить список</button>
@@ -47,13 +52,13 @@
       </section>
 
       <div style="font-size:10px;color:#999;text-align:center;margin-top:8px;">
-        Deal Invoice Summary v.25 Marketplace B24
+        Deal Invoice Summary v.32 Marketplace B24
       </div>
     </main>
     <div id="periodHelpModal" class="modal-backdrop" hidden>
       <section class="modal-panel settings-help-modal" role="dialog" aria-modal="true" aria-labelledby="periodHelpTitle">
         <h2 id="periodHelpTitle">Выборка сделок</h2>
-        <p>Массовый расчёт берёт сделки выбранной воронки, у которых дата создания сделки или дата начала сделки попадает в выбранный период. Дополнительно учитываются сделки со счетами, найденными за этот же период по дате создания счёта или дате выставления счёта.</p>
+        <p>Массовый расчёт всегда берёт сделки выбранной воронки, у которых дата создания сделки или дата начала сделки попадает в выбранный период. Если включена настройка учёта счетов периода, дополнительно учитываются сделки прошлых периодов со счетами, найденными за этот же период по дате создания счёта или дате выставления счёта.</p>
         <div class="modal-actions">
           <button id="closePeriodHelp" type="button">Понятно</button>
         </div>
@@ -65,6 +70,6 @@
         var h=d.getElementsByTagName('script')[0];h.parentNode.insertBefore(s,h);
       })(window,document,'https://cdn-ru.bitrix24.ru/b31051/crm/site_button/loader_9_no7zeu.js');
     </script>
-    <script src="settings.js?v=layout-20260814-7"></script>
+    <script src="settings.js?v=layout-20260817-7"></script>
   </body>
 </html>

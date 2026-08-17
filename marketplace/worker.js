@@ -1,7 +1,8 @@
-const runtimeVersion = "layout-20260814-7";
-const appVersion = "Deal Invoice Summary v.25 Marketplace B24";
+const runtimeVersion = "layout-20260817-7";
+const appVersion = "Deal Invoice Summary v.32 Marketplace B24";
 const defaultSettings = {
   includeNegativeStages: false,
+  includeInvoiceWindowDeals: true,
   issuedField: "UF_CRM_INV_SUM_ISSUED",
   paidField: "UF_CRM_INV_SUM_PAID",
   unpaidField: "UF_CRM_INV_SUM_UNPAID",

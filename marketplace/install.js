@@ -3,10 +3,11 @@ const installButton = document.querySelector("#installButton");
 const logNode = document.querySelector("#log");
 const INSTALL_STEP_DELAY_MS = 2500;
 
-const RUNTIME_VERSION = "layout-20260814-7";
-const APP_VERSION = "Deal Invoice Summary v.25 Marketplace B24"; // синхронизировать с app.js
+const RUNTIME_VERSION = "layout-20260817-7";
+const APP_VERSION = "Deal Invoice Summary v.32 Marketplace B24"; // синхронизировать с app.js
 const DEFAULT_SETTINGS = {
   includeNegativeStages: false,
+  includeInvoiceWindowDeals: true,
   issuedField: "UF_CRM_INV_SUM_ISSUED",
   paidField: "UF_CRM_INV_SUM_PAID",
   unpaidField: "UF_CRM_INV_SUM_UNPAID",
