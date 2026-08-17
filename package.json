@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "test": "node --test src public marketplace",
-    "lint": "node --check src/server.js && node --check src/vibeClient.js && node --check src/summary.js && node --check src/server.test.js && node --check src/vibeClient.test.js && node --check src/summary.test.js && node --check public/app.js && node --check public/deal-tab.js && node --check public/app.test.js && node --check public/deal-tab.test.js && node --check marketplace/app.js && node --check marketplace/install.js && node --check marketplace/settings.js && node --check marketplace/worker.js && node --check marketplace/marketplace.test.js"
+    "lint": "node --check src/server.js && node --check src/vibeClient.js && node --check src/summary.js && node --check src/server.test.js && node --check src/vibeClient.test.js && node --check src/summary.test.js && node --check public/app.js && node --check public/deal-tab.js && node --check public/app.test.js && node --check public/deal-tab.test.js && node --check marketplace/app.js && node --check marketplace/install.js && node --check marketplace/settings.js && node --check marketplace/worker.js && node --check marketplace/marketplace.test.js && node --check marketplace/marketplace-runtime.test.js"
   },
   "engines": {
     "node": ">=20"

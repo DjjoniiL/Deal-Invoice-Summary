@@ -1,5 +1,5 @@
-const runtimeVersion = "layout-20260817-7";
-const appVersion = "Deal Invoice Summary v.32 Marketplace B24";
+const runtimeVersion = "layout-20260817-9";
+const appVersion = "Deal Invoice Summary v.34 Marketplace B24";
 const defaultSettings = {
   includeNegativeStages: false,
   includeInvoiceWindowDeals: true,
@@ -125,12 +125,54 @@ function hidePeriodHelp() {
   periodHelpModal.hidden = true;
 }
 
+let chatOpenDetected = false;
+let chatOpenObserver = null;
+let chatRetryTimer = 0;
+
+function isVisibleNode(node) {
+  return Boolean(node && (node.offsetParent !== null || node.getClientRects().length));
+}
+
+function markChatOpen() {
+  chatOpenDetected = true;
+  if (chatRetryTimer) window.clearTimeout(chatRetryTimer);
+  chatRetryTimer = 0;
+  chatOpenObserver?.disconnect();
+  chatOpenObserver = null;
+}
+
+function isOpenLineVisible() {
+  const selectors = [
+    ".b24-widget-button-popup-show",
+    ".b24-widget-button-popup:not([style*='display: none'])",
+    ".bx-livechat-wrapper",
+    ".bx-livechat-body",
+    "iframe[src*='livechat']",
+    "iframe[src*='openline']",
+    "iframe[src*='online']",
+  ];
+  return selectors.some((selector) => [...document.querySelectorAll(selector)].some(isVisibleNode));
+}
+
+function scheduleOpenLineRetry(attempt, delay) {
+  if (chatOpenDetected || isOpenLineVisible()) {
+    markChatOpen();
+    return;
+  }
+  if (chatRetryTimer) window.clearTimeout(chatRetryTimer);
+  chatRetryTimer = window.setTimeout(() => openOpenLineFromSettings(attempt), delay);
+}
+
 function clickOpenLineTarget(target) {
   if (!target) return false;
+  target.scrollIntoView?.({ block: "center", inline: "center" });
   target.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, cancelable: true, view: window }));
+  if (window.PointerEvent) target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, view: window, pointerId: 1, pointerType: "mouse" }));
   target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
   target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
+  if (window.PointerEvent) target.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, view: window, pointerId: 1, pointerType: "mouse" }));
   target.click();
+  markChatOpen();
   return true;
 }
 
@@ -144,7 +186,10 @@ function tryOpenLineApi() {
   ];
   for (const call of calls) {
     try {
-      if (call()) return true;
+      if (call()) {
+        markChatOpen();
+        return true;
+      }
     } catch {
       // Keep trying the next known widget API.
     }
@@ -153,7 +198,10 @@ function tryOpenLineApi() {
 }
 
 function openOpenLineFromSettings(attempt = 0) {
-  if (tryOpenLineApi()) return;
+  if (chatOpenDetected || isOpenLineVisible()) {
+    markChatOpen();
+    return;
+  }
   const selectors = [
     ".b24-widget-button-openline_livechat",
     ".b24-widget-button-openline",
@@ -163,14 +211,24 @@ function openOpenLineFromSettings(attempt = 0) {
     ".b24-widget-button-wrapper",
     ".b24-widget-button-position-bottom-right",
     ".b24-widget-button-popup",
+    "[data-b24-crm-button-widget]",
+    "[data-b24-widget-button]",
   ];
-  const target = selectors.flatMap((selector) => [...document.querySelectorAll(selector)])
-    .find((node) => node.offsetParent !== null || node.getClientRects().length);
-  if (clickOpenLineTarget(target)) {
-    if (attempt < 6) window.setTimeout(() => tryOpenLineApi(), 650);
+  if (tryOpenLineApi()) {
     return;
   }
-  if (attempt < 60) window.setTimeout(() => openOpenLineFromSettings(attempt + 1), 500);
+  const target = selectors.flatMap((selector) => [...document.querySelectorAll(selector)])
+    .find(isVisibleNode);
+  if (clickOpenLineTarget(target)) return;
+  if (attempt < 60) scheduleOpenLineRetry(attempt + 1, 500);
+}
+
+function watchOpenLineState() {
+  if (chatOpenObserver || chatOpenDetected) return;
+  chatOpenObserver = new MutationObserver(() => {
+    if (isOpenLineVisible()) markChatOpen();
+  });
+  chatOpenObserver.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style"] });
 }
 
 function shouldOpenChat() {
@@ -215,7 +273,16 @@ function init() {
   }
   BX24.init(() => {
     portalNode.textContent = `${BX24.getDomain?.() || ""} · ${appVersion}`;
-    if (shouldOpenChat()) openOpenLineFromSettings();
+    if (shouldOpenChat()) {
+      watchOpenLineState();
+      openOpenLineFromSettings();
+      window.addEventListener("load", () => {
+        if (!chatOpenDetected) openOpenLineFromSettings();
+      }, { once: true });
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden && !chatOpenDetected) openOpenLineFromSettings();
+      });
+    }
     initSettings().catch((error) => {
       statusNode.textContent = `Ошибка загрузки: ${error.message}`;
     });

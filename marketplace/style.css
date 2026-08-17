@@ -628,24 +628,24 @@ button:disabled {
 }
 
 .stats-modal {
-  width: min(760px, calc(100vw - 24px));
+  width: min(920px, calc(100vw - 24px));
   max-height: calc(100vh - 24px);
   min-height: 0;
   overflow: hidden;
-  padding: 14px 18px;
+  padding: 18px 24px;
 }
 
 .stats-chart-wrap {
   display: grid;
-  grid-template-columns: minmax(190px, .72fr) minmax(220px, 1fr);
-  gap: 18px;
+  grid-template-columns: minmax(220px, .78fr) minmax(240px, 1fr);
+  gap: 24px;
   align-items: center;
   margin-top: 12px;
 }
 
 .donut-chart {
   display: block;
-  width: min(100%, clamp(190px, 26vw, 250px));
+  width: min(100%, clamp(220px, 28vw, 300px));
   aspect-ratio: 1;
   filter: drop-shadow(0 14px 26px rgba(23, 32, 51, .14));
   cursor: pointer;

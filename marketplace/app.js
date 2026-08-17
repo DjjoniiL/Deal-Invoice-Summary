@@ -9,8 +9,8 @@ const defaultSettings = {
   autoRecalcWindowDays: 30,
   calculationCategoryId: "all",
 };
-const runtimeVersion = "layout-20260817-7";
-const appVersion = "Deal Invoice Summary v.32 Marketplace B24";
+const runtimeVersion = "layout-20260817-9";
+const appVersion = "Deal Invoice Summary v.34 Marketplace B24";
 const dealSummarySectionName = "deal_invoice_summary";
 const dealSummarySectionTitle = "Расчёт оплаты счетов";
 const defaultFieldLabels = new Map([
@@ -23,6 +23,7 @@ const defaultMappingKeys = ["issuedField", "paidField", "unpaidField", "remainin
 const settingsPageFileName = "settings.html";
 const defaultSetupVersionOption = "dealInvoiceSummaryDefaultSetupVersion";
 const userCalculationSettingsOption = "dealInvoiceSummaryUserCalculationSettings";
+const automationLastRunOption = "dealInvoiceSummaryAutomationLastRun";
 
 const moneyFormat = new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 });
 const form = document.querySelector("#settings");
@@ -303,6 +304,17 @@ function finishAutomationElapsed() {
   return elapsedSeconds;
 }
 
+function saveAutomationLastRun(value = new Date().toISOString()) {
+  localStorage.setItem(automationLastRunOption, value);
+  automationLastRun.textContent = formatLastRun(value);
+  return value;
+}
+
+function restoreAutomationLastRun() {
+  const stored = localStorage.getItem(automationLastRunOption);
+  if (stored) automationLastRun.textContent = formatLastRun(stored);
+}
+
 function buildWindowSummary(report) {
   const results = report?.results || [];
   const includedResults = results.filter((item) => !item.skippedCategory);
@@ -327,11 +339,14 @@ function buildWindowSummary(report) {
     acc.counts[group] += 1;
     acc.amounts[group] += windowStatusAmount(item, group);
     if (Number(item.dealId)) acc.dealIds[group].push(Number(item.dealId));
+    const stageId = dealStageId(item.deal);
+    if (stageId) acc.stageIds[group].push(stageId);
     return acc;
   }, {
     counts: { paid: 0, unpaid: 0, empty: 0, error: 0 },
     amounts: { paid: 0, unpaid: 0, empty: 0 },
     dealIds: { paid: [], unpaid: [], empty: [] },
+    stageIds: { paid: [], unpaid: [], empty: [] },
   });
 
   const dealCount = Number(report?.dealCount ?? includedResults.length) || includedResults.length;
@@ -410,9 +425,9 @@ function drawDealStatusChart(hoveredIndex = -1) {
 
 function renderDealStatusChart(summary) {
   const statuses = [
-    { key: "paid", label: "Завершено сделок", value: summary.status.counts.paid, color: "#23b47e", dealIds: summary.status.dealIds.paid, semanticId: "S" },
-    { key: "unpaid", label: "Сделок ожидают доплаты", value: summary.status.counts.unpaid, color: "#2b7de9", dealIds: summary.status.dealIds.unpaid, semanticId: "P" },
-    { key: "empty", label: "Сделок без счетов", value: summary.status.counts.empty, color: "#d0d5dd", dealIds: summary.status.dealIds.empty },
+    { key: "paid", label: "Завершено сделок", value: summary.status.counts.paid, color: "#23b47e", dealIds: summary.status.dealIds.paid, stageIds: summary.status.stageIds.paid, semanticId: "S" },
+    { key: "unpaid", label: "Сделок ожидают доплаты", value: summary.status.counts.unpaid, color: "#2b7de9", dealIds: summary.status.dealIds.unpaid, stageIds: summary.status.stageIds.unpaid, semanticId: "P" },
+    { key: "empty", label: "Сделок без счетов", value: summary.status.counts.empty, color: "#d0d5dd", dealIds: summary.status.dealIds.empty, stageIds: summary.status.stageIds.empty },
   ];
   const total = statuses.reduce((sum, item) => sum + item.value, 0);
   const radius = 252;
@@ -442,6 +457,8 @@ function dealListPathForStatsSlice(slice) {
   params.set("apply_filter", "Y");
   params.set("clear_filter", "Y");
   params.set("FILTER[ID]", [...new Set(slice.dealIds || [])].join(","));
+  const stageIds = [...new Set(slice.stageIds || [])].filter(Boolean);
+  if (stageIds.length) params.set("FILTER[STAGE_ID]", stageIds.join(","));
   if (slice.semanticId) params.set("FILTER[STAGE_SEMANTIC_ID]", slice.semanticId);
   const categoryId = settingsCategoryId(lastWindowReport?.settings || currentSettings);
   const basePath = categoryId === "all" ? "/crm/deal/list/" : `/crm/deal/category/${categoryId}/`;
@@ -1619,7 +1636,7 @@ async function runWindowCalculation(preflight) {
       const elapsedSeconds = finishAutomationElapsed();
       const elapsedText = formatProcessingTime(elapsedSeconds);
       setAutomationProgress(`Сделок для пересчёта не найдено. Время обработки ${elapsedText}.`, 100, { tone: "warning" });
-      automationLastRun.textContent = formatLastRun(new Date().toISOString());
+      saveAutomationLastRun();
       const report = { appVersion, ok: true, operation: "marketplace-window-recalculate", days, settings: currentSettings, ...recent, dealCount: 0, results: [], processingTimeSeconds: elapsedSeconds };
       renderWindowSummary(report);
       write({ ...report, message: "Сделок за выбранный период нет. Отчёт сформирован и готов к скачиванию." });
@@ -1656,7 +1673,7 @@ async function runWindowCalculation(preflight) {
     const elapsedSeconds = finishAutomationElapsed();
     const elapsedText = formatProcessingTime(elapsedSeconds);
     setAutomationProgress(ok ? `Пересчёт сделок завершён. Время обработки ${elapsedText}.` : `Пересчёт завершён с ошибками. Время обработки ${elapsedText}.`, 100, { tone: ok ? "success" : "warning" });
-    automationLastRun.textContent = formatLastRun(new Date().toISOString());
+    saveAutomationLastRun();
     const includedDealCount = results.filter((result) => result.ok && !result.skippedCategory).length;
     automationTracked.textContent = String(includedDealCount);
     const report = { appVersion, ok, operation: "marketplace-window-recalculate", days, settings: currentSettings, ...recent, dealCount: includedDealCount, results, processingTimeSeconds: elapsedSeconds };
@@ -2029,6 +2046,7 @@ async function initApp() {
   if (defaultSetup.fields) fields = defaultSetup.fields;
   settingsState = { settings: defaultSetup.settings, hasStoredSettings: true };
   currentSettings = defaultSetup.settings;
+  restoreAutomationLastRun();
   renderFields(fields, defaultSetup.userFields, settingsState.settings);
   form.includeNegativeStages.checked = Boolean(settingsState.settings.includeNegativeStages);
   setMappingStatus(

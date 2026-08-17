@@ -19,6 +19,7 @@ const expectedMarketplaceFiles = [
   "install.css",
   "install.html",
   "install.js",
+  "marketplace-runtime.test.js",
   "marketplace.test.js",
   "settings.html",
   "settings.js",
@@ -33,12 +34,12 @@ test("marketplace archive has static Bitrix24 entry files", () => {
   assert.match(installHtml, /install\.js/);
   assert.match(indexHtml, /style\.css/);
   assert.match(indexHtml, /app\.js/);
-  assert.match(settingsHtml, /settings\.js\?v=layout-20260817-7/);
-  assert.match(settingsHtml, /style\.css\?v=layout-20260817-7/);
-  assert.match(indexHtml, /app\.js\?v=layout-20260817-7/);
-  assert.match(indexHtml, /style\.css\?v=layout-20260817-7/);
-  assert.match(workerHtml, /worker\.js\?v=layout-20260817-7/);
-  assert.match(indexHtml, /Deal Invoice Summary v\.32 Marketplace B24/);
+  assert.match(settingsHtml, /settings\.js\?v=layout-20260817-9/);
+  assert.match(settingsHtml, /style\.css\?v=layout-20260817-9/);
+  assert.match(indexHtml, /app\.js\?v=layout-20260817-9/);
+  assert.match(indexHtml, /style\.css\?v=layout-20260817-9/);
+  assert.match(workerHtml, /worker\.js\?v=layout-20260817-9/);
+  assert.match(indexHtml, /Deal Invoice Summary v\.34 Marketplace B24/);
   assert.match(installHtml, /api\.bitrix24\.com\/api\/v1/);
   assert.match(indexHtml, /api\.bitrix24\.com\/api\/v1/);
   assert.match(settingsHtml, /api\.bitrix24\.com\/api\/v1/);
@@ -50,7 +51,7 @@ test("marketplace archive has static Bitrix24 entry files", () => {
 
 test("marketplace runtime package stays serverless", () => {
   assert.deepEqual([...marketplaceFiles].sort(), expectedMarketplaceFiles);
-  const runtimeFiles = marketplaceFiles.filter((file) => file !== "marketplace.test.js");
+  const runtimeFiles = marketplaceFiles.filter((file) => !file.endsWith(".test.js"));
   assert.deepEqual(runtimeFiles.sort(), ["app.js", "index.html", "install.css", "install.html", "install.js", "settings.html", "settings.js", "style.css", "worker-error.html", "worker.html", "worker.js"]);
 });
 
@@ -132,8 +133,8 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
   assert.match(appJs, /LANG_EDIT_FORM_LABEL/);
   assert.match(appJs, /Array\.isArray\(value\)/);
   assert.match(appJs, /if \(defaultLabel\) return defaultLabel/);
-  assert.match(appJs, /layout-20260817-7/);
-  assert.match(appJs, /Deal Invoice Summary v\.32 Marketplace B24/);
+  assert.match(appJs, /layout-20260817-9/);
+  assert.match(appJs, /Deal Invoice Summary v\.34 Marketplace B24/);
   assert.match(appJs, /operation: "manual-recalculate"/);
   assert.match(appJs, /operation: "ensure-fields"/);
   assert.match(appJs, /operation: "save-mapping"/);
@@ -144,8 +145,8 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
 });
 
 test("marketplace background worker watches open deal pages without backend", () => {
-  assert.match(workerJs, /layout-20260817-7/);
-  assert.match(workerJs, /Deal Invoice Summary v\.32 Marketplace B24/);
+  assert.match(workerJs, /layout-20260817-9/);
+  assert.match(workerJs, /Deal Invoice Summary v\.34 Marketplace B24/);
   assert.match(workerJs, /BX24\?\.placement\?\.info/);
   assert.match(workerJs, /PLACEMENT_OPTIONS/);
   assert.match(workerJs, /PAGE_BACKGROUND_WORKER/);
@@ -272,8 +273,15 @@ test("marketplace automation panel presents mass recalculation and statistics", 
   assert.match(settingsJs, /dealInvoiceSummaryUserCalculationSettings/);
   assert.match(settingsJs, /function openOpenLineFromSettings/);
   assert.match(settingsJs, /function tryOpenLineApi/);
+  assert.match(settingsJs, /scrollIntoView/);
+  assert.match(settingsJs, /PointerEvent/);
   assert.match(settingsJs, /MouseEvent\("mousedown"/);
+  assert.match(settingsJs, /chatOpenDetected/);
+  assert.match(settingsJs, /function isOpenLineVisible/);
+  assert.match(settingsJs, /MutationObserver/);
   assert.match(settingsJs, /attempt < 60/);
+  assert.match(settingsJs, /window\.addEventListener\("load", \(\) => \{/);
+  assert.match(settingsJs, /if \(!chatOpenDetected\) openOpenLineFromSettings\(\)/);
   assert.match(settingsJs, /B24Chat/);
   assert.match(settingsJs, /SiteButton/);
   assert.match(settingsJs, /openChat/);
@@ -323,6 +331,9 @@ test("marketplace automation panel presents mass recalculation and statistics", 
   assert.match(appJs, /Math\.ceil\(\(count \* secondsPerDeal\) \/ 30\) \* 30/);
   assert.match(appJs, /function startAutomationElapsed/);
   assert.match(appJs, /function finishAutomationElapsed/);
+  assert.match(appJs, /dealInvoiceSummaryAutomationLastRun/);
+  assert.match(appJs, /function saveAutomationLastRun/);
+  assert.match(appJs, /function restoreAutomationLastRun/);
   assert.match(appJs, /Время обработки \$\{elapsedText\}/);
   assert.match(appJs, /confirmWindowCalculation\.addEventListener\("click"/);
   assert.match(appJs, /cancelWindowCalculation\.addEventListener\("click"/);
@@ -372,6 +383,7 @@ test("marketplace automation panel presents mass recalculation and statistics", 
   assert.match(appJs, /windowStatsChart\.addEventListener\("click", openHoveredChartSlice\)/);
   assert.match(appJs, /function dealListPathForStatsSlice/);
   assert.match(appJs, /params\.set\("FILTER\[ID\]", \[\.\.\.new Set\(slice\.dealIds \|\| \[\]\)\]\.join\(","\)\)/);
+  assert.match(appJs, /params\.set\("FILTER\[STAGE_ID\]", stageIds\.join\(","\)\)/);
   assert.match(appJs, /params\.set\("FILTER\[STAGE_SEMANTIC_ID\]", slice\.semanticId\)/);
   assert.match(appJs, /semanticId: "S"/);
   assert.match(appJs, /semanticId: "P"/);
@@ -381,6 +393,7 @@ test("marketplace automation panel presents mass recalculation and statistics", 
   assert.match(appJs, /STAGE_SEMANTIC_ID/);
   assert.match(appJs, /acc\.amounts\[group\] \+= windowStatusAmount\(item, group\)/);
   assert.match(appJs, /acc\.dealIds\[group\]\.push\(Number\(item\.dealId\)\)/);
+  assert.match(appJs, /acc\.stageIds\[group\]\.push\(stageId\)/);
   assert.match(appJs, /const dealSemantic = dealSemanticFromResult\(item\)/);
   assert.match(appJs, /if \(!invoiceCount\) group = "empty"/);
   assert.match(appJs, /skippedCategory: Boolean\(result\.skippedCategory\)/);
@@ -474,9 +487,9 @@ test("marketplace automation panel presents mass recalculation and statistics", 
   assert.match(styleCss, /\.modal-panel\s*{[\s\S]*width:\s*min\(640px,\s*calc\(100vw - 24px\)\)/);
   assert.match(styleCss, /\.modal-panel\s*{[\s\S]*max-height:\s*calc\(100vh - 24px\)/);
   assert.match(styleCss, /\.modal-panel\s*{[\s\S]*overflow:\s*auto/);
-  assert.match(styleCss, /\.stats-modal\s*{[\s\S]*width:\s*min\(760px,\s*calc\(100vw - 24px\)\)/);
+  assert.match(styleCss, /\.stats-modal\s*{[\s\S]*width:\s*min\(920px,\s*calc\(100vw - 24px\)\)/);
   assert.match(styleCss, /\.stats-modal\s*{[\s\S]*overflow:\s*hidden/);
-  assert.match(styleCss, /\.donut-chart\s*{[\s\S]*width:\s*min\(100%,\s*clamp\(190px,\s*26vw,\s*250px\)\)/);
+  assert.match(styleCss, /\.donut-chart\s*{[\s\S]*width:\s*min\(100%,\s*clamp\(220px,\s*28vw,\s*300px\)\)/);
   assert.match(styleCss, /#serverSupportDetails\s*{[\s\S]*margin-top:\s*16px/);
   assert.match(styleCss, /#serverSupportDetails\s*{[\s\S]*white-space:\s*pre-line/);
   assert.doesNotMatch(styleCss, /Georgia/);
