@@ -20,7 +20,7 @@
 
 - Финальная Marketplace/serverless-версия: `Deal Invoice Summary v.34 Marketplace B24`.
 - Финальный runtime/cache marker: `layout-20260817-9`.
-- Финальный локальный архив для загрузки в Marketplace: `C:\AI Project B24\Калькулятор счетов Marketplace v34.zip`.
+- Финальный локальный архив для загрузки в Marketplace: `G:\AI Project B24\Калькулятор счетов Marketplace v34.zip`.
 - Финальная сборка проверена большим циклом: `npm run lint` и `npm test` (`80/80`) проходят.
 - Новый рабочий сервер VibeCode для Deal Invoice Summary создан и используется только для исторической серверной версии: `c576798a-ec5f-4491-b6a2-b28e74fc445f`.
 - Production URL текущей серверной версии: `https://app-2657fd62db74.vibecode.bitrix24.tech`.

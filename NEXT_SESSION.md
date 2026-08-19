@@ -235,7 +235,7 @@ git push
 - 2026-08-12: Marketplace `layout-20260812-5`: worker безопасно разбирает настройки `dealInvoiceSummarySettings` из `app.option.get`/`localStorage` и возвращается к дефолтам, если формат повреждён. Подготовлен архив `Калькулятор счетов Marketplace v15-6.zip`.
 ## Финальная передача v34
 
-v34 зафиксирована как итоговая стабильная Marketplace/serverless-версия. Архив для ручной загрузки: `C:\AI Project B24\Калькулятор счетов Marketplace v34.zip`.
+v34 зафиксирована как итоговая стабильная Marketplace/serverless-версия. Архив для ручной загрузки: `G:\AI Project B24\Калькулятор счетов Marketplace v34.zip`.
 
 Финально закрыто:
 
