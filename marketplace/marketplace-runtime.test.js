@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import { test } from "node:test";
 
@@ -6,8 +6,8 @@ import { test } from "node:test";
 // добавлять сюда отдельный тест с понятным описанием проверяемого поведения.
 // Название test(...) должно объяснять функциональный блок и пользовательский риск.
 
-const runtimeVersion = "layout-20260826-1";
-const appVersionPattern = /Deal Invoice Summary v\.35 Marketplace B24/;
+const runtimeVersion = "layout-20260826-2";
+const appVersionPattern = /Deal Invoice Summary v\.36 Marketplace B24/;
 const runtimeFiles = [
   "install.html",
   "install.js",
@@ -540,6 +540,7 @@ test("worker.js: worker определяет контекст сделки из 
     /PLACEMENT_OPTIONS/,
     /placement_options/,
     /options\.URI \|\| options\.uri \|\| document\.referrer/,
+    /function refreshActiveContext/,
     /function dealIdFromUri/,
     /\/crm\\\/deal\\\/details/,
     /\/crm\\\/deal\\\/show/,
@@ -565,14 +566,24 @@ test("worker.js: worker пересчитывает открытую сделку
 test("worker.js: worker мониторит CRM-список/канбан по DATE_MODIFY без внешних событий", () => {
   assertAllMatch(textFiles["worker.js"], [
     /function isDealWorkspaceUri/,
+    /function isDealKanbanUri/,
+    /refreshActiveContext/,
+    /function rememberLastSeenDeal/,
+    /function lastSeenDeal/,
+    /function checkLikelyClosedDealOnKanban/,
+    /dealInvoiceSummaryLastSeenDeal/,
+    /kanbanRecheckCooldownMs = 15000/,
     /function checkRecentDealChanges/,
     /getRecentlyModifiedDeals/,
     /crm\.deal\.list/,
+    /crm\.deal\.get/,
     /DATE_MODIFY/,
     /listMonitorLimit = 25/,
     /background-deal-list-start/,
     /background-deal-list-baseline/,
+    /background-kanban-return-recalculate/,
     /background-deal-list-change-recalculate/,
+    /kanbanReturn/,
     /changedDeals\.slice\(0, 5\)/,
   ], "worker.js");
 });

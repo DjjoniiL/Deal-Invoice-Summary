@@ -1,5 +1,5 @@
-const runtimeVersion = "layout-20260826-1";
-const appVersion = "Deal Invoice Summary v.35 Marketplace B24";
+﻿const runtimeVersion = "layout-20260826-2";
+const appVersion = "Deal Invoice Summary v.36 Marketplace B24";
 const defaultSettings = {
   includeNegativeStages: false,
   includeInvoiceWindowDeals: true,
@@ -15,18 +15,22 @@ const workerPollIntervalMs = 5000;
 const workerStatusThrottleMs = 60000;
 const workerLockTtlMs = 12000;
 const listMonitorLimit = 25;
+const kanbanRecheckCooldownMs = 15000;
 const backgroundPlacementCode = "PAGE_BACKGROUND_WORKER";
 const workerStatusOption = "dealInvoiceSummaryWorkerStatus";
+const lastSeenDealOption = "dealInvoiceSummaryLastSeenDeal";
 const workerSessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 let activeDealId = 0;
 let activeUri = "";
+let lastKnownDealId = 0;
 let lastDealSnapshot = null;
 let monitorTimer = null;
 let monitorBusy = false;
 let listMonitorReady = false;
 let lastListSnapshots = new Map();
 let lastStatusWriteAt = 0;
+let lastKanbanRecheckAt = 0;
 let placementInterfaceDiagnostics = null;
 
 console.info(`Deal Invoice Summary worker ${appVersion}`);
@@ -172,6 +176,32 @@ async function saveWorkerStatus(status, { throttle = false } = {}) {
     await callMethod("app.option.set", { options: { [workerStatusOption]: text } });
   } catch {
     // localStorage is enough for in-browser diagnostics when app.option is unavailable.
+  }
+}
+
+function rememberLastSeenDeal(dealId, uri = activeUri) {
+  const normalizedDealId = Number(dealId);
+  if (!normalizedDealId) return;
+  lastKnownDealId = normalizedDealId;
+  try {
+    localStorage.setItem(lastSeenDealOption, JSON.stringify({
+      dealId: normalizedDealId,
+      uri,
+      at: new Date().toISOString(),
+    }));
+  } catch {
+    // Remembering the last card is an optimization; list polling can still work without it.
+  }
+}
+
+function lastSeenDeal() {
+  if (lastKnownDealId) return { dealId: lastKnownDealId };
+  try {
+    const value = JSON.parse(localStorage.getItem(lastSeenDealOption) || "null");
+    const dealId = Number(value?.dealId || 0);
+    return dealId ? { ...value, dealId } : null;
+  } catch {
+    return null;
   }
 }
 
@@ -348,6 +378,11 @@ function claimDealLock(dealId) {
 }
 
 async function checkDeal(reason = "worker-poll") {
+  refreshActiveContext();
+  if (!activeDealId && isDealWorkspaceUri(activeUri)) {
+    await checkRecentDealChanges("worker-switched-to-list-poll");
+    return;
+  }
   if (!activeDealId || monitorBusy || !claimDealLock(activeDealId)) return;
   monitorBusy = true;
   try {
@@ -378,10 +413,38 @@ function isDealWorkspaceUri(uri) {
   return /\/crm\/deal(?:\/|$)/i.test(String(uri || ""));
 }
 
+function isDealKanbanUri(uri) {
+  return /\/crm\/deal\/(?:category\/\d+\/)?kanban(?:\/|\?|#|$)/i.test(String(uri || ""));
+}
+
+async function checkLikelyClosedDealOnKanban(reason) {
+  if (!isDealKanbanUri(activeUri)) return null;
+  const now = Date.now();
+  if (now - lastKanbanRecheckAt < kanbanRecheckCooldownMs) return null;
+  const remembered = lastSeenDeal();
+  if (!remembered?.dealId || !claimDealLock(remembered.dealId)) return null;
+  lastKanbanRecheckAt = now;
+  const deal = await callMethod("crm.deal.get", { id: Number(remembered.dealId) });
+  const result = await recalculateDeal(remembered.dealId, deal, "background-kanban-return-recalculate");
+  return {
+    reason,
+    dealId: remembered.dealId,
+    updatedFields: result.updatedFields,
+    skippedUpdate: result.skippedUpdate,
+    skippedCategory: result.skippedCategory,
+  };
+}
+
 async function checkRecentDealChanges(reason = "worker-list-poll") {
+  refreshActiveContext();
   if (!isDealWorkspaceUri(activeUri) || monitorBusy) return;
+  if (activeDealId) {
+    await checkDeal("worker-switched-to-deal-poll");
+    return;
+  }
   monitorBusy = true;
   try {
+    const kanbanReturn = await checkLikelyClosedDealOnKanban(reason);
     const deals = await getRecentlyModifiedDeals();
     const nextSnapshots = new Map();
     const changedDeals = [];
@@ -400,12 +463,12 @@ async function checkRecentDealChanges(reason = "worker-list-poll") {
     lastListSnapshots = nextSnapshots;
     if (!listMonitorReady) {
       listMonitorReady = true;
-      await saveWorkerStatus({ ok: true, operation: "background-deal-list-baseline", monitoredDeals: nextSnapshots.size }, { throttle: true });
+      await saveWorkerStatus({ ok: true, operation: "background-deal-list-baseline", monitoredDeals: nextSnapshots.size, kanbanReturn }, { throttle: true });
       return;
     }
 
     if (!changedDeals.length) {
-      await saveWorkerStatus({ ok: true, operation: reason, skipped: true, monitoredDeals: nextSnapshots.size }, { throttle: true });
+      await saveWorkerStatus({ ok: true, operation: reason, skipped: true, monitoredDeals: nextSnapshots.size, kanbanReturn }, { throttle: true });
       return;
     }
 
@@ -416,7 +479,7 @@ async function checkRecentDealChanges(reason = "worker-list-poll") {
       processed.push({ dealId: item.dealId, updatedFields: result.updatedFields, skippedUpdate: result.skippedUpdate, skippedCategory: result.skippedCategory });
     }
 
-    await saveWorkerStatus({ ok: true, operation: "background-deal-list-change-recalculate", changedDeals: changedDeals.length, processed });
+    await saveWorkerStatus({ ok: true, operation: "background-deal-list-change-recalculate", changedDeals: changedDeals.length, processed, kanbanReturn });
   } catch (error) {
     await saveWorkerStatus({ ok: false, operation: reason, error: error.message });
   } finally {
@@ -452,6 +515,16 @@ function currentPlacementContext() {
   };
 }
 
+function refreshActiveContext() {
+  const context = currentPlacementContext();
+  const previousDealId = activeDealId;
+  activeUri = context.uri;
+  activeDealId = dealIdFromUri(activeUri);
+  if (activeDealId && activeDealId !== previousDealId) lastDealSnapshot = null;
+  if (activeDealId) rememberLastSeenDeal(activeDealId, activeUri);
+  return context;
+}
+
 function dealIdFromUri(uri) {
   const text = decodeURIComponent(String(uri || ""));
   const match = text.match(/\/crm\/deal\/details\/(\d+)(?:\/|\?|#|$)/i)
@@ -460,9 +533,7 @@ function dealIdFromUri(uri) {
 }
 
 function startWorker() {
-  const context = currentPlacementContext();
-  activeUri = context.uri;
-  activeDealId = dealIdFromUri(activeUri);
+  const context = refreshActiveContext();
 
   if (!activeDealId) {
     if (isDealWorkspaceUri(activeUri)) {

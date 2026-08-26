@@ -1,10 +1,10 @@
-const statusNode = document.querySelector("#status");
+﻿const statusNode = document.querySelector("#status");
 const installButton = document.querySelector("#installButton");
 const logNode = document.querySelector("#log");
 const INSTALL_STEP_DELAY_MS = 2500;
 
-const RUNTIME_VERSION = "layout-20260826-1";
-const APP_VERSION = "Deal Invoice Summary v.35 Marketplace B24"; // синхронизировать с app.js
+const RUNTIME_VERSION = "layout-20260826-2";
+const APP_VERSION = "Deal Invoice Summary v.36 Marketplace B24"; // синхронизировать с app.js
 const DEFAULT_SETTINGS = {
   includeNegativeStages: false,
   includeInvoiceWindowDeals: true,

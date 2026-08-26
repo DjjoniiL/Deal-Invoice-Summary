@@ -1,5 +1,5 @@
-const runtimeVersion = "layout-20260826-1";
-const appVersion = "Deal Invoice Summary v.35 Marketplace B24";
+﻿const runtimeVersion = "layout-20260826-2";
+const appVersion = "Deal Invoice Summary v.36 Marketplace B24";
 const defaultSettings = {
   includeNegativeStages: false,
   includeInvoiceWindowDeals: true,

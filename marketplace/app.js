@@ -1,4 +1,4 @@
-const defaultSettings = {
+﻿const defaultSettings = {
   includeNegativeStages: false,
   includeInvoiceWindowDeals: true,
   issuedField: "UF_CRM_INV_SUM_ISSUED",
@@ -9,8 +9,8 @@ const defaultSettings = {
   autoRecalcWindowDays: 30,
   calculationCategoryId: "all",
 };
-const runtimeVersion = "layout-20260826-1";
-const appVersion = "Deal Invoice Summary v.35 Marketplace B24";
+const runtimeVersion = "layout-20260826-2";
+const appVersion = "Deal Invoice Summary v.36 Marketplace B24";
 const dealSummarySectionName = "deal_invoice_summary";
 const dealSummarySectionTitle = "Расчёт оплаты счетов";
 const defaultFieldLabels = new Map([
