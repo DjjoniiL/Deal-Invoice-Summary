@@ -9,8 +9,8 @@ const defaultSettings = {
   autoRecalcWindowDays: 30,
   calculationCategoryId: "all",
 };
-const runtimeVersion = "layout-20260817-9";
-const appVersion = "Deal Invoice Summary v.34 Marketplace B24";
+const runtimeVersion = "layout-20260826-1";
+const appVersion = "Deal Invoice Summary v.35 Marketplace B24";
 const dealSummarySectionName = "deal_invoice_summary";
 const dealSummarySectionTitle = "Расчёт оплаты счетов";
 const defaultFieldLabels = new Map([

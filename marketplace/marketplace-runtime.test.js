@@ -6,8 +6,8 @@ import { test } from "node:test";
 // добавлять сюда отдельный тест с понятным описанием проверяемого поведения.
 // Название test(...) должно объяснять функциональный блок и пользовательский риск.
 
-const runtimeVersion = "layout-20260817-9";
-const appVersionPattern = /Deal Invoice Summary v\.34 Marketplace B24/;
+const runtimeVersion = "layout-20260826-1";
+const appVersionPattern = /Deal Invoice Summary v\.35 Marketplace B24/;
 const runtimeFiles = [
   "install.html",
   "install.js",
@@ -592,17 +592,18 @@ test("worker.js: worker использует lock и throttle диагности
   ], "worker.js");
 });
 
-test("worker.js: worker обновляет карточку через reloadData или reloadWindow fallback", () => {
+test("worker.js: worker использует только мягкий reloadData без полного reloadWindow fallback", () => {
   assertAllMatch(textFiles["worker.js"], [
     /function getPlacementInterface/,
     /BX24\.placement\.getInterface/,
     /normalizePlacementInterfaceList/,
     /commands\.includes\("reloadData"\)/,
     /BX24\.placement\.call\("reloadData"/,
-    /function reloadBitrixWindow/,
-    /BX24\.reloadWindow/,
-    /fallbackFrom: "reloadData unavailable"/,
+    /reason: "reloadData unavailable"/,
+    /reason: "placement.call unavailable"/,
   ], "worker.js");
+  assert.doesNotMatch(textFiles["worker.js"], /BX24\.reloadWindow/);
+  assert.doesNotMatch(textFiles["worker.js"], /function reloadBitrixWindow/);
 });
 
 test("worker.js: worker уважает выбранную воронку и пишет нули в пустые расчётные поля", () => {

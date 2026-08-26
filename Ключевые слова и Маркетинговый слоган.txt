@@ -1,0 +1,25 @@
+﻿КЛЮЧЕВЫЕ СЛОВА
+
+расчёт оплаты счетов, расчет оплаты счетов, контроль оплаты счетов, счета по сделке, оплата по сделке, сводка по счетам, финансовая сводка сделки, выставленные счета, оплаченные счета, неоплаченные счета, остаток оплаты сделки, остаток по счетам, сумма счетов, сумма оплаченных счетов, сумма неоплаченных счетов, калькулятор счетов, расчёт счетов сделки, контроль счетов в сделке, отчёт по счетам сделки, отчет по счетам сделки, выгрузка счетов в CSV, CSV отчёт, CSV отчет, массовый пересчёт сделок, массовый перерасчет сделок, пересчёт оплат, автоматический расчёт оплат, пользовательские поля сделки, заполнение полей сделки, воронки сделок, статистика сделок за период, сделки без счетов, сделки с неоплаченными счетами, контроль задолженности по сделкам, CRM финансы, финансы сделки, финансовый контроль в CRM, Битрикс24 счета, Битрикс24 сделки, Битрикс24 CRM, приложение для Битрикс24, Bitrix24 CRM, Deal Invoice Summary, invoice summary, deal invoices, invoice payment control, invoice payment calculation, invoice payment tracking, deal invoice report, deal payment summary, deal financial summary, issued invoices, paid invoices, unpaid invoices, deal payment balance, invoice totals, paid invoice totals, unpaid invoice totals, invoice calculator, deal invoice calculation, invoice control in deals, CSV invoice export, mass deal recalculation, bulk deal recalculation, payment recalculation, automatic payment calculation, deal custom fields, deal field updates, deal funnels, deal statistics, deals without invoices, deals with unpaid invoices, deal debt control, CRM finance, deal finance, financial control in CRM, Bitrix24 invoices, Bitrix24 deals, Bitrix24 app, Bitrix24 Marketplace app
+
+МАРКЕТИНГОВЫЕ СЛОГАНЫ
+
+Приложение считает счета по сделке в Bitrix24, показывает оплачено/не оплачено/остаток,
+а также помогает обновлять поля сделки.
+
+Варианты слогана от ИИ Codex, все до 60 символов:
+
+1. **Контроль оплаты счетов прямо в сделке**
+2. **Сводка оплат по счетам в сделках Bitrix24**
+3. **Все счета сделки: выставлено, оплачено, остаток**
+4. **Автоматический расчет оплат по сделкам**
+5. **Платежи по счетам сделки на одном экране**
+6. **Счета сделки под контролем**
+7. **Расчет оплат и остатков по счетам сделки**
+8. **Финансовая сводка счетов в Bitrix24**
+9. **Оплаты счетов без ручных расчетов**
+10. **Видно, сколько по сделке оплачено**
+
+Мой вариант для Marketplace: 
+"Автоматический расчёт и контроль оплат счетов в сделке".
+ Он короткий - 54 символа, понятный и сразу говорит о пользе.

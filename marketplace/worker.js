@@ -1,5 +1,5 @@
-const runtimeVersion = "layout-20260817-9";
-const appVersion = "Deal Invoice Summary v.34 Marketplace B24";
+const runtimeVersion = "layout-20260826-1";
+const appVersion = "Deal Invoice Summary v.35 Marketplace B24";
 const defaultSettings = {
   includeNegativeStages: false,
   includeInvoiceWindowDeals: true,
@@ -256,23 +256,9 @@ function getPlacementInterface() {
   });
 }
 
-function reloadBitrixWindow() {
-  return new Promise((resolve) => {
-    if (!window.BX24?.reloadWindow) {
-      resolve({ ok: false, skipped: true, reason: "reloadWindow unavailable" });
-      return;
-    }
-    try {
-      window.BX24.reloadWindow(() => resolve({ ok: true, command: "reloadWindow" }));
-    } catch (error) {
-      resolve({ ok: false, command: "reloadWindow", error: error.message });
-    }
-  });
-}
-
 async function refreshDealCard() {
   if (!window.BX24?.placement?.call) {
-    return reloadBitrixWindow();
+    return { ok: false, skipped: true, reason: "placement.call unavailable" };
   }
   try {
     const info = await getPlacementInterface();
@@ -280,10 +266,10 @@ async function refreshDealCard() {
     const events = normalizePlacementInterfaceList(info?.event);
     placementInterfaceDiagnostics = { commands, events };
     if (!commands.includes("reloadData")) {
-      const fallback = await reloadBitrixWindow();
       return {
-        ...fallback,
-        fallbackFrom: "reloadData unavailable",
+        ok: false,
+        skipped: true,
+        reason: "reloadData unavailable",
         placementInterface: placementInterfaceDiagnostics,
       };
     }
@@ -296,8 +282,7 @@ async function refreshDealCard() {
       }));
     });
   } catch (error) {
-    const fallback = await reloadBitrixWindow();
-    return { ...fallback, fallbackFrom: "reloadData error", error: error.message, placementInterface: placementInterfaceDiagnostics };
+    return { ok: false, command: "reloadData", error: error.message, placementInterface: placementInterfaceDiagnostics };
   }
 }
 

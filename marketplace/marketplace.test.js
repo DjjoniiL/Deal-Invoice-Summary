@@ -34,12 +34,12 @@ test("marketplace archive has static Bitrix24 entry files", () => {
   assert.match(installHtml, /install\.js/);
   assert.match(indexHtml, /style\.css/);
   assert.match(indexHtml, /app\.js/);
-  assert.match(settingsHtml, /settings\.js\?v=layout-20260817-9/);
-  assert.match(settingsHtml, /style\.css\?v=layout-20260817-9/);
-  assert.match(indexHtml, /app\.js\?v=layout-20260817-9/);
-  assert.match(indexHtml, /style\.css\?v=layout-20260817-9/);
-  assert.match(workerHtml, /worker\.js\?v=layout-20260817-9/);
-  assert.match(indexHtml, /Deal Invoice Summary v\.34 Marketplace B24/);
+  assert.match(settingsHtml, /settings\.js\?v=layout-20260826-1/);
+  assert.match(settingsHtml, /style\.css\?v=layout-20260826-1/);
+  assert.match(indexHtml, /app\.js\?v=layout-20260826-1/);
+  assert.match(indexHtml, /style\.css\?v=layout-20260826-1/);
+  assert.match(workerHtml, /worker\.js\?v=layout-20260826-1/);
+  assert.match(indexHtml, /Deal Invoice Summary v\.35 Marketplace B24/);
   assert.match(installHtml, /api\.bitrix24\.com\/api\/v1/);
   assert.match(indexHtml, /api\.bitrix24\.com\/api\/v1/);
   assert.match(settingsHtml, /api\.bitrix24\.com\/api\/v1/);
@@ -133,8 +133,8 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
   assert.match(appJs, /LANG_EDIT_FORM_LABEL/);
   assert.match(appJs, /Array\.isArray\(value\)/);
   assert.match(appJs, /if \(defaultLabel\) return defaultLabel/);
-  assert.match(appJs, /layout-20260817-9/);
-  assert.match(appJs, /Deal Invoice Summary v\.34 Marketplace B24/);
+  assert.match(appJs, /layout-20260826-1/);
+  assert.match(appJs, /Deal Invoice Summary v\.35 Marketplace B24/);
   assert.match(appJs, /operation: "manual-recalculate"/);
   assert.match(appJs, /operation: "ensure-fields"/);
   assert.match(appJs, /operation: "save-mapping"/);
@@ -145,8 +145,8 @@ test("marketplace app uses Bitrix24 REST directly without VibeCode backend", () 
 });
 
 test("marketplace background worker watches open deal pages without backend", () => {
-  assert.match(workerJs, /layout-20260817-9/);
-  assert.match(workerJs, /Deal Invoice Summary v\.34 Marketplace B24/);
+  assert.match(workerJs, /layout-20260826-1/);
+  assert.match(workerJs, /Deal Invoice Summary v\.35 Marketplace B24/);
   assert.match(workerJs, /BX24\?\.placement\?\.info/);
   assert.match(workerJs, /PLACEMENT_OPTIONS/);
   assert.match(workerJs, /PAGE_BACKGROUND_WORKER/);
@@ -176,7 +176,7 @@ test("marketplace background worker watches open deal pages without backend", ()
   assert.match(workerJs, /OPPORTUNITY \?\? deal\.opportunity/);
   assert.match(workerJs, /STAGE_ID \|\| deal\.stageId/);
   assert.match(workerJs, /reloadData/);
-  assert.match(workerJs, /BX24\.reloadWindow/);
+  assert.doesNotMatch(workerJs, /BX24\.reloadWindow/);
   assert.doesNotMatch(workerJs, /vibecode\.bitrix24\.tech/);
   assert.doesNotMatch(workerJs, /\/api\/recalculate/);
 });
