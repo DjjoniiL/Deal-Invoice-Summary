@@ -1219,7 +1219,7 @@ function userDisplayName(user) {
     user.LAST_NAME || user.lastName,
     user.NAME || user.name,
     user.SECOND_NAME || user.secondName,
-  ].filter(Boolean).join(" ") || user.EMAIL || user.email || user.LOGIN || user.login || "";
+  ].filter(Boolean).join(" ");
 }
 
 function invoiceStageId(invoice) {

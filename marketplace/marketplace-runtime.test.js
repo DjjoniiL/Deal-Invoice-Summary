@@ -332,6 +332,31 @@ test("app.js: права администрирования ограничива
   ], "app.js");
 });
 
+test("app.js: user.get используется только для ФИО, совместимого с user_brief", () => {
+  assertAllMatch(textFiles["app.js"], [
+    /callList\("user\.get"/,
+    /function userDisplayName/,
+    /LAST_NAME/,
+    /SECOND_NAME/,
+  ], "app.js");
+  assertAllDoNotMatch(textFiles["app.js"], [/EMAIL/, /LOGIN/, /user\.userfield/], "app.js");
+});
+
+test("документация фиксирует user_brief как единственный пользовательский скоуп", async () => {
+  const docs = (await Promise.all([
+    readFile(new URL("../README.md", import.meta.url), "utf8"),
+    readFile(new URL("../PROJECT_SPECIFICATION.md", import.meta.url), "utf8"),
+    readFile(new URL("../NEXT_SESSION.md", import.meta.url), "utf8"),
+    readFile(new URL("../Next_PROMT.md", import.meta.url), "utf8"),
+  ])).join("\n");
+  assert.match(docs, /Пользователи \(минимальный\).*user_brief/);
+  assert.doesNotMatch(docs, /должна запрашивать пользовательский скоуп `Пользователи \(базовый\).*user_basic/);
+  assert.doesNotMatch(docs, /пользовательский скоуп указывать как `Пользователи \(базовый\).*user_basic/);
+  assert.doesNotMatch(docs, /минимальный набор прав: CRM, Встраивание приложений, Базовый/);
+  assert.match(docs, /отдельн(?:ый|ого).*basic.*не (?:выбирается|указывается)/i);
+  assert.match(docs, /app\.option\.get\/app\.option\.set и user\.admin/);
+});
+
 test("app.js: создание стандартных полей использует человекочитаемые подписи и не показывает UF-коды как label", () => {
   assertAllMatch(textFiles["app.js"], [
     /defaultFieldLabels/,
